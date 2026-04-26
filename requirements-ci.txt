@@ -4,7 +4,7 @@
 
 # 核心依赖（测试必需）
 fastapi==0.115.9
-starlette==0.46.2
+# starlette==0.46.2  # 由 fastapi 自动管理
 pydantic==2.10.6
 python-dotenv==1.1.0
 psutil==6.1.0
