@@ -28,7 +28,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e .
+          pip install -r requirements.txt
           pip install pytest pytest-cov pytest-timeout pytest-mock coverage ruff
 
       - name: Run linter
