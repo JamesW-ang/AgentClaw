@@ -1,0 +1,97 @@
+[project]
+name = "agentclaw"
+version = "6.1.0"
+description = "AgentClaw v6.1 — 纯 Python + DeepSeek + LangGraph 实现的 AI Agent 框架"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["test"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+]
+markers = [
+    "unit: 单元测试（快速，无外部依赖）",
+    "integration: 集成测试（需要网络或外部服务）",
+    "slow: 耗时测试",
+    "security: 安全相关测试",
+]
+log_cli = false
+log_cli_level = "WARNING"
+
+[tool.coverage.run]
+source = [
+    "core",
+    "tool_registry",
+    "builtin_tools",
+    "registry_adapter",
+    "agent_core",
+    "rag_searcher",
+    "vision_tool",
+    "multimodal_image_gen",
+    "multimodal_vlm",
+    "multimodal_router",
+    "api_server",
+    "health",
+    "security",
+    "feedback_collector",
+    "experience_learner",
+    "evolution_manage",
+    "adaptive_optimizer",
+]
+branch = true
+parallel = true
+omit = [
+    "test/*",
+    "*/__pycache__/*",
+    "*/deprecated*",
+    "server/*",
+    "main.py",
+    "demo_ui.py",
+    "web_ui.py",
+    "langgraph_demo.py",
+    "level1_chat.py",
+    "level3_multimodal_agent.py",
+    "multi_agent.py",
+    "multi_agent_app.py",
+    "crewai_demo.py",
+    "demo_aoi.py",
+]
+
+[tool.coverage.report]
+precision = 1
+show_missing = true
+skip_covered = false
+fail_under = 40
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+    "pass$",
+    "except ImportError:",
+    "# pragma: no branch",
+    "\\.\\.\\.",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
+title = "AgentClaw v6.1 测试覆盖率报告"
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "UP"]
+ignore = ["E501"]

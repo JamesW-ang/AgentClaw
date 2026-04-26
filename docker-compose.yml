@@ -1,0 +1,46 @@
+# ============================================================================
+# AgentClaw AI Agent - Docker Compose 部署配置
+# ============================================================================
+services:
+  agentclaw:
+    build: .
+    container_name: agentclaw
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+      - "7860:7860"
+    env_file:
+      - .env
+    environment:
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+    volumes:
+      - ./data:/app/data
+      - ./memory_db:/app/memory_db
+      - ./knowledge_base:/app/knowledge_base
+    depends_on:
+      - chromadb
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: agentclaw-chroma
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/heartbeat')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  chroma_data:
