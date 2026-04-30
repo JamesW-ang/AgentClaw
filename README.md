@@ -18,11 +18,16 @@
 5. [核心模块说明](#5-核心模块说明)
 6. [安全与可靠性](#6-安全与可靠性)
 7. [自主进化系统（Level 4）](#7-自主进化系统level-4)
-8. [快速开始](#8-快速开始)
-9. [部署方式](#9-部署方式)
-10. [API 接口文档](#10-api-接口文档)
-11. [项目结构](#11-项目结构)
-12. [开发指南](#12-开发指南)
+8. [Agent 评估系统（eval）](#8-agent-评估系统eval)
+9. [快速开始](#9-快速开始)
+10. [部署方式](#10-部署方式)
+11. [API 接口文档](#11-api-接口文档)
+12. [项目结构](#12-项目结构)
+13. [开发指南](#13-开发指南)
+14. [数据流与层级依赖](#14-数据流与层级依赖)
+15. [技术选型详解](#15-技术选型详解)
+16. [常见问题与故障恢复](#16-常见问题与故障恢复)
+17. [性能优化建议](#17-性能优化建议)
 
 ---
 
@@ -391,7 +396,57 @@ record_feedback(
 
 ---
 
-## 8. 快速开始
+## 8. Agent 评估系统（eval）
+
+### 8.1 评估框架
+
+`eval/` 目录提供了完整的 Agent 性能评估能力：
+
+| 文件 | 说明 |
+|------|------|
+| `agent_evaluator.py` | 评估器核心，支持多种评估指标 |
+| `eval_data/` | 评估报告和测试数据集 |
+| `test_agent_evaluator.py` | 评估器单元测试 |
+
+### 8.2 核心功能
+
+- **多维度评估**：任务完成率、回答准确性、工具使用效率
+- **自动测试**：支持批量执行测试用例
+- **报告生成**：JSON 格式的详细评估报告
+- **对比分析**：支持不同配置/模型的性能对比
+
+### 8.3 使用方式
+
+```python
+from eval.agent_evaluator import AgentEvaluator
+
+# 创建评估器
+evaluator = AgentEvaluator()
+
+# 运行评估
+report = evaluator.run_evaluation(
+    tasks="eval_data/test_cases.json",
+    agent_config={"model": "deepseek-chat"},
+    metrics=["accuracy", "completion_rate", "latency"]
+)
+
+# 生成报告
+evaluator.generate_report(report, output_path="eval_data/eval_report.json")
+```
+
+### 8.4 评估指标
+
+| 指标 | 说明 | 计算方式 |
+|------|------|---------|
+| `accuracy` | 回答准确率 | 正确回答数 / 总任务数 |
+| `completion_rate` | 任务完成率 | 完成任务数 / 总任务数 |
+| `latency` | 平均延迟 | 总耗时 / 完成任务数 |
+| `tool_usage` | 工具使用效率 | 有效工具调用 / 总工具调用 |
+| `cost` | 推理成本 | Token 使用量估算 |
+
+---
+
+## 9. 快速开始
 
 ### 8.1 安装依赖
 
