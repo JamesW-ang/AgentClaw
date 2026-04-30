@@ -1289,5 +1289,6 @@ echo $DEEPSEEK_API_KEY  # 验证环境变量
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v6.2 | 2026-04 | 三链联动系统上线（LLMGuard容错层 + ErrorChain错误处理链 + TraceChain链路追踪）；工具清单扩展至22个（新增AOI检测引擎、XML配置工具）；添加Agent评估系统(eval) |
 | v6.1 | 2026-04 | 集成 retry/rate_limiter/health 到主调用链路；security 升级 TokenBucket；tool_registry.execute() 集成限流 |
 | v6.0 | 2026-04 | 五步架构整合（Config→Registry→Security→Retry→RateLimiter→LLM）；18 个工具注册；自主进化系统 |
