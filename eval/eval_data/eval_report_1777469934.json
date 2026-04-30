@@ -1,0 +1,88 @@
+{
+  "timestamp": 1777469934.4304,
+  "mode": "fast",
+  "sample_count": 60,
+  "rag": {
+    "context_precision": 0.5324926944078417,
+    "context_recall": 0.693917193917194,
+    "answer_relevancy": 0.347220030800969,
+    "faithfulness": 0.4770320750477474,
+    "answer_correctness": 0.781547619047619
+  },
+  "tool": {
+    "selection_accuracy": 0.7142857142857143,
+    "total_calls": 7,
+    "correct_calls": 5,
+    "per_tool_accuracy": {
+      "web_search": 0.5,
+      "calculator": 1.0,
+      "file_read": 0.5,
+      "sys_monitor": 1.0,
+      "image_generate": 1.0
+    }
+  },
+  "latency": {
+    "p50": 2.8831990928741607,
+    "p95": 4.65243566298933,
+    "p99": 5.134848261115591,
+    "mean": 2.8280815423775207,
+    "min": 0.23119503013120468,
+    "max": 5.2401177602173,
+    "std": 1.110007154731368,
+    "sample_count": 50
+  },
+  "tool_latency": {
+    "web_search": {
+      "p50": 1.35,
+      "p95": 1.4849999999999999,
+      "p99": 1.4969999999999999,
+      "mean": 1.35,
+      "min": 1.2,
+      "max": 1.5,
+      "std": 0.21213203435596428,
+      "sample_count": 2
+    },
+    "calculator": {
+      "p50": 0.05,
+      "p95": 0.05,
+      "p99": 0.05,
+      "mean": 0.05,
+      "min": 0.05,
+      "max": 0.05,
+      "std": 0.0,
+      "sample_count": 1
+    },
+    "file_read": {
+      "p50": 0.3,
+      "p95": 0.3,
+      "p99": 0.3,
+      "mean": 0.3,
+      "min": 0.3,
+      "max": 0.3,
+      "std": 0.0,
+      "sample_count": 2
+    },
+    "sys_monitor": {
+      "p50": 0.8,
+      "p95": 0.8,
+      "p99": 0.8,
+      "mean": 0.8,
+      "min": 0.8,
+      "max": 0.8,
+      "std": 0.0,
+      "sample_count": 1
+    },
+    "image_generate": {
+      "p50": 5.2,
+      "p95": 5.2,
+      "p99": 5.2,
+      "mean": 5.2,
+      "min": 5.2,
+      "max": 5.2,
+      "std": 0.0,
+      "sample_count": 1
+    }
+  },
+  "agent_success_rate": 0.92,
+  "avg_reasoning_steps": 3.1
+}
