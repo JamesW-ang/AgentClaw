@@ -66,39 +66,76 @@ AgentClaw v6.1 是一个生产级 AI Agent 框架，核心特性包括：
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Level 6: 检测层                            │
-│         health.py — ChromaDB/LLM API/内存三维健康检查          │
+│ Level 6: 监控层 (health.py)                                  │
+│ ├─ 依赖: Level 1 (logger/config)                            │
+│ └─ 被依赖: api_server (GET /health*)                        │
 ├─────────────────────────────────────────────────────────────┤
-│                    Level 5: 服务层                            │
-│     api_server.py (FastAPI)  +  demo_ui.py (Gradio)          │
+│ Level 5: 服务层 (api_server.py, demo_ui.py)                  │
+│ ├─ 依赖: Level 4 (agent_core) + aoi_workflow + 多Agent     │
+│ ├─ demo_ui 8个Tab:                                           │
+│ │   Tab1 检测分析 / Tab2 对话助手 / Tab3 RAG知识库           │
+│ │   Tab4 多模态视觉 / Tab5 图片生成 / Tab6 多Agent协作        │
+│ │   Tab7 AOI独立检测 / Tab8 AOI智能闭环                      │
+│ └─ 被依赖: 用户 (HTTP/Gradio)                               │
 ├─────────────────────────────────────────────────────────────┤
-│                    Level 4: 编排层                            │
-│     react_agent.py → LangGraph create_react_agent            │
-│     demo_ui.py    → LangGraph StateGraph (多Agent)           │
-│     agent_core.py → 统一入口（懒加载单例）                     │
-│     [三链联动]    → LLMGuard + ErrorChain + TraceChain      │
+│ Level 4: 编排层                                              │
+│ ├─ agent_core.py (ReAct Agent)                               │
+│ │   ├─ 依赖: Level 2 (registry_adapter) + Level 1          │
+│ │   ├─ 调用: LangGraph create_react_agent()                  │
+│ │   └─ 被依赖: Level 5 (api_server/demo_ui Tab2)           │
+│ ├─ aoi_workflow.py (AOI智能闭环)                             │
+│ │   ├─ 4个Agent: 缺陷识别→案例检索→参数推理→XML改写        │
+│ │   ├─ 调用: registry.execute() 统一调度工具                │
+│ │   ├─ 条件分支: 检测结果→推理→改写→复检 (≤3次重试)        │
+│ │   └─ 被依赖: Level 5 (demo_ui Tab8)                      │
+│ └─ 多Agent协作 (demo_ui内 LangGraph StateGraph)              │
+│     ├─ 3场景: code_review/tech_design/problem_diagnosis      │
+│     ├─ 每场景3角色, 各角色通过 _registry_tool_wrapper         │
+│     │   桥接 registry (StructuredTool + Pydantic Schema)     │
+│     ├─ 工具映射: agent_xxx → registry.execute(xxx)          │
+│     └─ 被依赖: Level 5 (demo_ui Tab6)                        │
 ├─────────────────────────────────────────────────────────────┤
-│                    Level 3: 安全与可靠性层                     │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────────────┐ │
-│  │ security.py  │ │ retry.py     │ │ rate_limiter.py      │ │
-│  │ SQL/XSS/敏感 │ │ 指数退避重试  │ │ 令牌桶限流(双层)     │ │
-│  │ 信息过滤     │ │ 3次重试+抖动  │ │ LLM+Search独立限流   │ │
-│  └──────────────┘ └──────────────┘ └──────────────────────┘ │
+│ Level 3: 安全与可靠性层                                       │
+│ ├─ security.py (中间件)                                      │
+│ │   ├─ 依赖: core/rate_limiter                              │
+│ │   └─ 被依赖: FastAPI (middleware stack)                    │
+│ ├─ core/retry.py (装饰器)                                    │
+│ │   ├─ 依赖: core/logger                                    │
+│ │   └─ 被依赖: vision_tool (自动重试)                        │
+│ └─ core/rate_limiter.py (限流)                               │
+│     ├─ 依赖: threading                                       │
+│     └─ 被依赖: security + tool_registry                      │
 ├─────────────────────────────────────────────────────────────┤
-│                    Level 2: 工具层                            │
-│  tool_registry.py (单例注册中心) + registry_adapter.py       │
-│  22 个工具: 搜索/计算/文件/命令/代码/监控/进程/视觉/生成/检索   │
-│            + AOI检测 + XML配置管理                            │
+│ Level 2: 工具层 (tool_registry.py, registry_adapter.py)       │
+│ ├─ tool_registry.py (单例注册中心, 24个工具)                 │
+│ │   ├─ 被注册: builtin_tools + vision_tool + ...             │
+│ │   ├─ registry.execute(name, args) → {success, result}     │
+│ │   └─ 被依赖: 所有编排层模块统一入口                        │
+│ └─ registry_adapter.py                                       │
+│     ├─ ToolInfo → StructuredTool + Pydantic Schema           │
+│     ├─ 调用: feedback_collector (反馈采集)                    │
+│     └─ 被依赖: agent_core (get_react_tools)                  │
 ├─────────────────────────────────────────────────────────────┤
-│                    Level 1: 基础层                            │
-│  core/config.py  — 环境变量验证器 (Frozen dataclass)         │
-│  core/logger.py  — 彩色控制台 + 旋转文件日志                  │
-│  core/retry.py   — 重试装饰器 (指数退避 + 抖动)              │
-│  core/rate_limiter.py — TokenBucket 限流器                   │
-│  core/llm_guard.py    — LLM 容错层 (降级/熔断/缓存)          │
-│  core/error_chain.py  — 统一错误处理链                       │
-│  core/trace_chain.py  — 链路追踪系统                         │
+│ Level 1: 基础层 (core/)                                      │
+│ ├─ config.py (配置验证器 + load_dotenv)                      │
+│ ├─ logger.py (日志系统)                                      │
+│ ├─ retry.py (重试装饰器)                                     │
+│ └─ rate_limiter.py (限流器)                                  │
 └─────────────────────────────────────────────────────────────┘
+```
+
+**自主进化系统 (平行运行):**
+```
+FeedbackCollector → ExperienceLearner → AdaptiveOptimizer → EvolutionManager
+└─ 被 RegistryAdapter 触发，收集工具执行反馈
+```
+
+**数据流核心: 所有工具调用汇聚 registry，3条路线统一调度**
+```
+绿线: 用户→agent_core→registry_adapter→registry→工具
+蓝线: 用户→aoi_workflow→registry.execute→registry→工具
+橙线: 用户→多Agent→_registry_tool_wrapper→registry.execute→registry→工具
+紫线: 用户→vision/image→registry.execute→registry→工具
 ```
 
 ---
