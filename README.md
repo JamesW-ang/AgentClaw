@@ -14,20 +14,21 @@
 1. [项目概览](#1-项目概览)
 2. [六层架构](#2-六层架构)
 3. [请求全链路（集成版）](#3-请求全链路集成版)
-4. [工具清单（18个）](#4-工具清单18个)
+4. [工具清单（22个）](#4-工具清单22个)
 5. [核心模块说明](#5-核心模块说明)
 6. [安全与可靠性](#6-安全与可靠性)
-7. [自主进化系统（Level 4）](#7-自主进化系统level-4)
-8. [Agent 评估系统（eval）](#8-agent-评估系统eval)
-9. [快速开始](#9-快速开始)
-10. [部署方式](#10-部署方式)
-11. [API 接口文档](#11-api-接口文档)
-12. [项目结构](#12-项目结构)
-13. [开发指南](#13-开发指南)
-14. [数据流与层级依赖](#14-数据流与层级依赖)
-15. [技术选型详解](#15-技术选型详解)
-16. [常见问题与故障恢复](#16-常见问题与故障恢复)
-17. [性能优化建议](#17-性能优化建议)
+7. [三链联动系统（Phase 1）](#7-三链联动系统phase-1)
+8. [自主进化系统（Level 4）](#8-自主进化系统level-4)
+9. [Agent 评估系统（eval）](#9-agent-评估系统eval)
+10. [快速开始](#10-快速开始)
+11. [部署方式](#11-部署方式)
+12. [API 接口文档](#12-api-接口文档)
+13. [项目结构](#13-项目结构)
+14. [开发指南](#14-开发指南)
+15. [数据流与层级依赖](#15-数据流与层级依赖)
+16. [技术选型详解](#16-技术选型详解)
+17. [常见问题与故障恢复](#17-常见问题与故障恢复)
+18. [性能优化建议](#18-性能优化建议)
 
 ---
 
@@ -36,8 +37,9 @@
 AgentClaw v6.1 是一个生产级 AI Agent 框架，核心特性包括：
 
 - **六层架构设计**：Config → Registry → Security → Retry → RateLimiter → LLM，每一层独立可测试
-- **18 个内置工具**：搜索、计算、文件操作、命令执行、代码沙箱、系统监控、进程管理、视觉分析、图片生成、知识库检索、浏览器控制
+- **22 个内置工具**：搜索、计算、文件操作、命令执行、代码沙箱、系统监控、进程管理、视觉分析、图片生成、知识库检索、浏览器控制、AOI 检测、XML 配置管理
 - **三重可靠性保障**：指数退避重试（retry）+ 令牌桶限流（rate_limiter）+ 健康检查（health）
+- **三链联动系统**：LLMGuard（容错）+ ErrorChain（错误处理）+ TraceChain（链路追踪）
 - **自主进化系统**：FeedbackCollector → ExperienceLearner → AdaptiveOptimizer → EvolutionManager，后台自动学习优化
 - **多入口部署**：FastAPI REST API（:8000）+ Gradio Web UI（:7860）+ Docker 容器化
 
@@ -53,6 +55,9 @@ AgentClaw v6.1 是一个生产级 AI Agent 框架，核心特性包括：
 | REST API | FastAPI + Uvicorn |
 | Web UI | Gradio 5.x |
 | 向量检索 | ChromaDB + bge-small-zh-v1.5 |
+| 容错层 | LLMGuard（超时/重试/降级/熔断） |
+| 错误处理 | ErrorChain（统一错误分类和兜底） |
+| 链路追踪 | TraceChain（请求级追踪） |
 | 部署 | Docker + docker-compose |
 
 ---
@@ -71,6 +76,7 @@ AgentClaw v6.1 是一个生产级 AI Agent 框架，核心特性包括：
 │     react_agent.py → LangGraph create_react_agent            │
 │     demo_ui.py    → LangGraph StateGraph (多Agent)           │
 │     agent_core.py → 统一入口（懒加载单例）                     │
+│     [三链联动]    → LLMGuard + ErrorChain + TraceChain      │
 ├─────────────────────────────────────────────────────────────┤
 │                    Level 3: 安全与可靠性层                     │
 │  ┌──────────────┐ ┌──────────────┐ ┌──────────────────────┐ │
@@ -81,13 +87,17 @@ AgentClaw v6.1 是一个生产级 AI Agent 框架，核心特性包括：
 ├─────────────────────────────────────────────────────────────┤
 │                    Level 2: 工具层                            │
 │  tool_registry.py (单例注册中心) + registry_adapter.py       │
-│  18 个工具: 搜索/计算/文件/命令/代码/监控/进程/视觉/生成/检索   │
+│  22 个工具: 搜索/计算/文件/命令/代码/监控/进程/视觉/生成/检索   │
+│            + AOI检测 + XML配置管理                            │
 ├─────────────────────────────────────────────────────────────┤
 │                    Level 1: 基础层                            │
 │  core/config.py  — 环境变量验证器 (Frozen dataclass)         │
 │  core/logger.py  — 彩色控制台 + 旋转文件日志                  │
 │  core/retry.py   — 重试装饰器 (指数退避 + 抖动)              │
 │  core/rate_limiter.py — TokenBucket 限流器                   │
+│  core/llm_guard.py    — LLM 容错层 (降级/熔断/缓存)          │
+│  core/error_chain.py  — 统一错误处理链                       │
+│  core/trace_chain.py  — 链路追踪系统                         │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -141,7 +151,7 @@ HTTP POST /ask
 
 ---
 
-## 4. 工具清单（18个）
+## 4. 工具清单（22个）
 
 ### 核心工具（builtin_tools.py — 14个）
 
@@ -178,7 +188,21 @@ HTTP POST /ask
 |---|--------|------|------|
 | 20 | `image_generate` | AI 文生图 | CogView-3-Flash，7种尺寸，内容安全审计 |
 
-> 注：browser_tool 为可选依赖（需安装 Playwright），实际注册数量 17-20 个。
+### AOI 检测工具（aoi_engine.py — 1个）
+
+| # | 工具名 | 说明 | 特性 |
+|---|--------|------|------|
+| 21 | `aoi_detect` | AOI 电路板缺陷检测 | 支持多种缺陷类型识别 |
+
+### XML 配置工具（xml_config_tool.py — 3个）
+
+| # | 工具名 | 说明 | 特性 |
+|---|--------|------|------|
+| 22 | `xml_config_read` | 读取 AOI XML 配置文件 | 视觉参数/运动坐标 |
+| 23 | `xml_config_write` | 修改 XML 配置参数 | 含备份、校验、原子写入 |
+| 24 | `xml_config_diff` | 对比配置与默认值差异 | 高亮显示变更 |
+
+> 注：browser_tool 为可选依赖（需安装 Playwright），实际注册数量 22-24 个。
 
 ---
 
@@ -358,7 +382,97 @@ Starlette BaseHTTPMiddleware，五层防护：
 
 ---
 
-## 7. 自主进化系统（Level 4）
+## 7. 三链联动系统（Phase 1）
+
+### 7.1 系统架构
+
+三链联动是 AgentClaw v6.1 的核心可靠性保障体系：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    三链联动系统                              │
+├─────────────────────────────────────────────────────────────┤
+│  LLMGuard (容错层)                                          │
+│  ├─ 超时控制 + 智能重试 + 降级链 + 熔断保护                  │
+│  ├─ 缓存降级 + 优雅降级                                      │
+│  └─ 链路追踪集成                                            │
+├─────────────────────────────────────────────────────────────┤
+│  ErrorChain (错误处理链)                                     │
+│  ├─ 全局兜底（任何异常不泄漏裸栈）                            │
+│  ├─ 错误分类（timeout/network/auth/rate_limit/data/fatal）   │
+│  ├─ 自动重试 + 优雅降级                                      │
+│  └─ 熔断保护（避免雪崩）                                      │
+├─────────────────────────────────────────────────────────────┤
+│  TraceChain (链路追踪)                                       │
+│  ├─ 自动 trace_id（每个请求唯一ID）                           │
+│  ├─ Span 嵌套（父子关系，看清调用层次）                        │
+│  ├─ 全链路计时（每个阶段耗时）                                 │
+│  └─ 持久化（JSONL 按日期存储）                                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 7.2 LLMGuard — LLM 调用容错层
+
+| 能力 | 说明 |
+|------|------|
+| **超时控制** | 每次调用可配超时，超时自动中断 |
+| **智能重试** | 按 HTTP 状态码分类，不同错误不同策略 |
+| **降级链** | 主模型 → 备用模型 → 缓存 → 优雅降级 |
+| **熔断保护** | 连续失败自动熔断 |
+| **链路追踪** | 每次 LLM 调用记录为 TraceChain Span |
+| **自学习反馈** | 失败模式自动写入 ExperienceLearner |
+
+```python
+from core.llm_guard import LLMGuard
+
+guard = LLMGuard(
+    default_model="deepseek-chat",
+    backup_models=["deepseek-reasoner"],
+    api_key=settings.DEEPSEEK_API_KEY,
+    base_url=settings.DEEPSEEK_BASE_URL,
+)
+
+result = guard.chat(
+    messages=[{"role": "user", "content": "你好"}],
+    stream=False,
+)
+print(result.content)
+```
+
+### 7.3 ErrorChain — 统一错误处理链
+
+| 错误类型 | 处理策略 |
+|---------|---------|
+| `timeout` | 可重试，指数退避 |
+| `network` | 可重试，递增延迟 |
+| `auth` | 不可重试，立即上报 |
+| `rate_limit` | 等待后重试 |
+| `data` | 不可重试，返回错误信息 |
+| `fatal` | 立即终止，返回兜底消息 |
+
+### 7.4 TraceChain — 统一请求追踪
+
+```
+Request → Trace (id, meta)
+            ├─ Span: agent.think     (LLM 推理)
+            ├─ Span: tool.web_search (工具调用)
+            ├─ Span: tool.code_exec  (工具调用)
+            ├─ Span: agent.respond   (生成回复)
+            └─ Result (耗时, token, 状态)
+```
+
+### 7.5 三链联动初始化
+
+```python
+from agent_core import init_chains
+
+# 初始化三链联动
+error_chain, trace_chain = init_chains()
+```
+
+---
+
+## 8. 自主进化系统（Level 4）
 
 ```
 FeedbackCollector ← 工具执行结果（成功/失败/延迟）
@@ -396,9 +510,9 @@ record_feedback(
 
 ---
 
-## 8. Agent 评估系统（eval）
+## 9. Agent 评估系统（eval）
 
-### 8.1 评估框架
+### 9.1 评估框架
 
 `eval/` 目录提供了完整的 Agent 性能评估能力：
 
@@ -408,14 +522,14 @@ record_feedback(
 | `eval_data/` | 评估报告和测试数据集 |
 | `test_agent_evaluator.py` | 评估器单元测试 |
 
-### 8.2 核心功能
+### 9.2 核心功能
 
 - **多维度评估**：任务完成率、回答准确性、工具使用效率
 - **自动测试**：支持批量执行测试用例
 - **报告生成**：JSON 格式的详细评估报告
 - **对比分析**：支持不同配置/模型的性能对比
 
-### 8.3 使用方式
+### 9.3 使用方式
 
 ```python
 from eval.agent_evaluator import AgentEvaluator
@@ -434,7 +548,7 @@ report = evaluator.run_evaluation(
 evaluator.generate_report(report, output_path="eval_data/eval_report.json")
 ```
 
-### 8.4 评估指标
+### 9.4 评估指标
 
 | 指标 | 说明 | 计算方式 |
 |------|------|---------|
@@ -446,15 +560,15 @@ evaluator.generate_report(report, output_path="eval_data/eval_report.json")
 
 ---
 
-## 9. 快速开始
+## 10. 快速开始
 
-### 8.1 安装依赖
+### 10.1 安装依赖
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 8.2 配置环境变量
+### 10.2 配置环境变量
 
 ```bash
 cp AgentClaw_Docker_.env.example .env
@@ -467,7 +581,7 @@ cp AgentClaw_Docker_.env.example .env
 # SERPAPI_KEY=xxx            # 搜索增强
 ```
 
-### 8.3 启动服务
+### 10.3 启动服务
 
 ```bash
 # 方式 1：统一启动（API + Web UI）
@@ -480,7 +594,7 @@ python api_server.py
 python demo_ui.py
 ```
 
-### 8.4 验证
+### 10.4 验证
 
 ```bash
 # 健康检查
@@ -498,9 +612,9 @@ open http://localhost:7860
 
 ---
 
-## 9. 部署方式
+## 11. 部署方式
 
-### 9.1 Docker 部署
+### 11.1 Docker 部署
 
 ```bash
 # 构建镜像
@@ -513,7 +627,7 @@ docker-compose up -d
 docker-compose logs -f
 ```
 
-### 9.2 端口映射
+### 11.2 端口映射
 
 | 服务 | 端口 | 说明 |
 |------|------|------|
@@ -522,7 +636,7 @@ docker-compose logs -f
 
 ---
 
-## 10. API 接口文档
+## 12. API 接口文档
 
 ### POST /ask
 
@@ -569,7 +683,7 @@ docker-compose logs -f
 
 ---
 
-## 11. 项目结构
+## 13. 项目结构
 
 ```
 AgentClaw_code/
@@ -595,6 +709,9 @@ AgentClaw_code/
 ├── evolution_manage.py        # 进化管理器
 ├── load_docs.py               # 文档加载器
 ├── create_vector_db.py        # 向量库创建
+├── aoi_engine.py              # AOI 检测引擎
+├── aoi_workflow.py            # AOI 工作流
+├── xml_config_tool.py         # XML 配置管理工具
 ├── requirements.txt           # Python 依赖
 ├── Dockerfile                 # Docker 镜像
 ├── docker-compose.yml         # Docker Compose
@@ -604,7 +721,15 @@ AgentClaw_code/
 │   ├── config.py              # 配置验证器（Frozen dataclass）
 │   ├── logger.py              # 彩色日志 + 文件轮转
 │   ├── retry.py               # 重试装饰器（指数退避 + 抖动）
-│   └── rate_limiter.py        # 令牌桶限流器
+│   ├── rate_limiter.py        # 令牌桶限流器
+│   ├── llm_guard.py           # LLM 容错层（降级/熔断/缓存）
+│   ├── error_chain.py         # 统一错误处理链
+│   └── trace_chain.py         # 链路追踪系统
+│
+├── eval/
+│   ├── agent_evaluator.py     # Agent 评估器核心
+│   ├── eval_data/             # 评估数据和报告
+│   └── test_agent_evaluator.py # 评估器单元测试
 │
 └── os_tools/
     ├── file_write.py          # 安全文件写入
@@ -618,9 +743,9 @@ AgentClaw_code/
 
 ---
 
-## 12. 开发指南
+## 14. 开发指南
 
-### 12.1 添加新工具
+### 14.1 添加新工具
 
 ```python
 # 方式 1：装饰器注册（推荐）
@@ -672,7 +797,7 @@ def my_function():
 my_limiter = TokenBucket(rate=10.0, capacity=20)
 ```
 
-### 12.4 运行测试
+### 14.4 运行测试
 
 ```bash
 # 工具注册中心自测
@@ -688,7 +813,7 @@ python builtin_tools.py
 python agent_core.py
 ```
 
-### 12.5 自定义配置
+### 14.5 自定义配置
 
 在 `.env` 文件或环境变量中设置：
 
@@ -712,9 +837,9 @@ WEB_PORT=8081
 
 ---
 
-## 13. 数据流与层级依赖
+## 15. 数据流与层级依赖
 
-### 13.1 完整请求数据流
+### 15.1 完整请求数据流
 
 ```
 1. 用户输入 (前端/API 客户端)
@@ -835,7 +960,7 @@ WEB_PORT=8081
 8. 用户接收 (前端/API 客户端)
 ```
 
-### 13.2 工具执行细节流程
+### 15.2 工具执行细节流程
 
 ```
 Agent 决策: 调用 web_search
@@ -927,7 +1052,7 @@ FeedbackCollector.collect()
    └─ Agent 继续推理或返回最终答案
 ```
 
-### 13.3 层级依赖关系
+### 15.3 层级依赖关系
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -987,9 +1112,9 @@ FeedbackCollector.collect()
 
 ---
 
-## 14. 技术选型详解
+## 16. 技术选型详解
 
-### 14.1 LLM 推理引擎对比
+### 16.1 LLM 推理引擎对比
 
 | 方案 | 成本 | 延迟 | 中文能力 | 推理能力 | 知识时效 | 推荐场景 |
 |------|------|------|---------|---------|---------|---------|
@@ -1004,7 +1129,7 @@ FeedbackCollector.collect()
 - 备用模型：`deepseek-reasoner` (复杂任务)
 - 切换方法：修改 `core/config.py::LLM_MODEL`
 
-### 14.2 视觉理解方案
+### 16.2 视觉理解方案
 
 | 方案 | 精度 | 速度 | 成本 | 特点 | 集成 |
 |------|------|------|------|------|------|
@@ -1015,7 +1140,7 @@ FeedbackCollector.collect()
 
 **当前配置**：`VISION_MODEL=glm-4v-flash`
 
-### 14.3 图片生成方案
+### 16.3 图片生成方案
 
 | 方案 | 质量 | 速度 | 成本 | 中文友好 | 推荐 |
 |------|------|------|------|---------|------|
@@ -1026,7 +1151,7 @@ FeedbackCollector.collect()
 
 **当前配置**：`IMAGE_GEN_MODEL=cogview-3-flash`
 
-### 14.4 向量检索方案
+### 16.4 向量检索方案
 
 | 方案 | 隐私 | 速度 | 成本 | 易用性 | 推荐 |
 |------|------|------|------|--------|------|
@@ -1037,7 +1162,7 @@ FeedbackCollector.collect()
 
 **Embedding 模型**：`bge-small-zh-v1.5` (BAAI, 开源中文友好)
 
-### 14.5 Agent 编排框架对比
+### 16.5 Agent 编排框架对比
 
 | 框架 | 易用性 | 控制流 | 流式输出 | 多工具 | 推荐 |
 |------|--------|--------|---------|--------|------|
@@ -1050,7 +1175,7 @@ FeedbackCollector.collect()
 
 ---
 
-## 15. 常见问题与故障恢复
+## 17. 常见问题与故障恢复
 
 ### Q1: 启动时报错 "Missing config: DEEPSEEK_API_KEY"
 
@@ -1121,9 +1246,9 @@ echo $DEEPSEEK_API_KEY  # 验证环境变量
 
 ---
 
-## 16. 性能优化建议
+## 18. 性能优化建议
 
-### 16.1 LLM 推理加速
+### 18.1 LLM 推理加速
 
 | 优化 | 方法 | 收益 | 实施难度 |
 |------|------|------|---------|
@@ -1132,7 +1257,7 @@ echo $DEEPSEEK_API_KEY  # 验证环境变量
 | **本地部署** | Ollama / vLLM | -99% 成本 | 高 |
 | **异步调用** | AsyncIO 并行请求 | +50% 吞吐 | 中 |
 
-### 17.2 工具执行优化
+### 18.2 工具执行优化
 
 | 优化 | 方法 | 收益 | 难度 |
 |------|------|------|------|
@@ -1141,7 +1266,7 @@ echo $DEEPSEEK_API_KEY  # 验证环境变量
 | **预热** | 启动时初始化常用工具 | -30% 首次延迟 | 低 |
 | **限流优化** | 分层限流 (LLM/Search) | +30% 吞吐 | 低 |
 
-### 17.3 数据库优化
+### 18.3 数据库优化
 
 | 优化 | 方法 | 收益 | 难度 |
 |------|------|------|------|
@@ -1149,7 +1274,7 @@ echo $DEEPSEEK_API_KEY  # 验证环境变量
 | **批量操作** | 批量 insert/query | +40% 吞吐 | 低 |
 | **本地缓存** | LRU 缓存常查向量 | -80% DB 查询 | 中 |
 
-### 17.4 系统资源优化
+### 18.4 系统资源优化
 
 | 优化 | 方法 | 收益 | 难度 |
 |------|------|------|------|
