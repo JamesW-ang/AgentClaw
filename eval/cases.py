@@ -243,8 +243,12 @@ def get_basic_eval_cases() -> list:
     return [c for c in all_cases if c.id in priority_ids]
 
 
-if __name__ == "__main__":
+def main():
+    """打印所有评估测试用例"""
     cases = get_agent_eval_cases()
     print(f"共 {len(cases)} 个测试用例:")
     for c in cases:
         print(f"  [{c.id}] {c.name} ({c.task_type.value})")
+
+if __name__ == "__main__":
+    main()

@@ -870,7 +870,8 @@ def run_aoi_closed_loop(
 # 自测入口
 # ============================================================
 
-if __name__ == "__main__":
+def main():
+    """结构性自测：验证工作流能正确编译，不依赖 LLM/API"""
     # 结构性测试：验证工作流能正确编译，不依赖 LLM/API
     print("=" * 60)
     print("AOI 智能闭环工作流 — 结构性自测")
@@ -955,3 +956,6 @@ if __name__ == "__main__":
     print("  START → defect_analyst → should_tune?")
     print("    → end:   END")
     print("    → tune:  param_optimizer → config_executor → verifier → END")
+
+if __name__ == "__main__":
+    main()

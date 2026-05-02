@@ -160,7 +160,7 @@ HTTP POST /ask
   │  ├─ _llm_limiter.consume() — LLM 专用限流 (rate=1.0/s, capacity=5)
   │  ├─ get_react_agent() — 懒加载单例
   │  │    ├─ init_all_tools() — 触发工具注册 (18个)
-  │  │    └─ create_react_agent(LLM, tools, MemorySaver)
+  │  │    └─ create_react_agent(LLM, tools, SqliteSaver)
   │  └─ agent.ainvoke(messages)
   │
   ▼
@@ -725,6 +725,13 @@ docker-compose logs -f
 ```
 AgentClaw/
 ├── main.py                    # 统一启动入口（代理脚本，委托 scripts/main.py）
+├── demo_ui.py                 # 兼容入口：Gradio Web UI（委托 demo/ui.py）
+├── demo_self_learning.py      # 兼容入口：自主学习演示（委托 demo/self_learning.py）
+├── eval_runner.py             # 兼容入口：评估运行器（委托 eval/agent_evaluator.py）
+├── eval_cases.py              # 兼容入口：评估用例查看（委托 eval/cases.py）
+├── aoi_workflow.py            # 兼容入口：AOI 工作流（委托 aoi/workflow.py）
+├── xml_config_tool.py         # 兼容入口：XML 配置管理（委托 tools/xml_config.py）
+├── langfuse_adapter.py        # 兼容入口：LangFuse 可观测性（委托 tools/langfuse_adapter.py）
 │
 ├── agent/                     # Agent 核心
 │   ├── __init__.py
@@ -794,13 +801,19 @@ AgentClaw/
 │   ├── multimodal_router.py   # 多模态路由
 │   └── langfuse_adapter.py    # LangFuse 可观测性
 │
-├── test/                      # 单元测试
+├── test/                      # 单元测试（11 个测试模块，214+ 用例）
+│   ├── conftest.py             # 共享 fixtures
 │   ├── test_core.py
 │   ├── test_health.py
 │   ├── test_integration.py
 │   ├── test_multimodal_rag.py
 │   ├── test_rate_limiter.py
-│   └── test_react_agent.py
+│   ├── test_react_agent.py
+│   ├── test_api.py             # API 端点测试
+│   ├── test_error_chain.py     # ErrorChain 容错链测试
+│   ├── test_learning.py        # 学习系统测试
+│   ├── test_llm_guard.py       # LLMGuard 降级/缓存测试
+│   └── test_trace_chain.py     # TraceChain 追踪测试
 │
 ├── data/                      # 运行时数据
 │   ├── chroma_db/             # ChromaDB 向量库
@@ -814,7 +827,7 @@ AgentClaw/
 └── AgentClaw_Docker_.env.example  # 环境变量模板
 ```
 
-**代码统计**：约 8,300 行 Python 代码，50+ 个源文件，按功能分包管理。
+**代码统计**：约 21,000 行 Python 代码，70+ 个源文件，按功能分包管理。
 
 ---
 

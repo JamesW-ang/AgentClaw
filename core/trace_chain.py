@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional, List, Dict
 from collections import defaultdict
 from datetime import datetime
+from core.metrics import observe_request, observe_span
 
 logger = logging.getLogger(__name__)
 
@@ -434,7 +435,8 @@ class TraceChain:
 
     def end_trace(self, trace: Trace):
         """结束追踪并持久化"""
-        trace.finish()
+        if not trace.end_time:
+            trace.finish()
         with self._lock:
             if trace.final_status != SpanStatus.OK:
                 self._stats['total_errors'] += 1
@@ -444,6 +446,14 @@ class TraceChain:
             self._stats['avg_duration_ms'] = (
                 self._stats['avg_duration_ms'] * (n - 1) + trace.duration_ms
             ) / n
+
+        # Metrics 上报
+        status_str = trace.final_status.value if hasattr(trace.final_status, 'value') else str(trace.final_status)
+        observe_request(status=status_str, duration=trace.duration_ms / 1000)
+        for span in getattr(trace, 'spans', []):
+            span_status = span.status.value if hasattr(span.status, 'value') else str(span.status)
+            span_kind = span.kind.value if hasattr(span.kind, 'value') else str(span.kind)
+            observe_span(kind=span_kind, status=span_status)
 
         # 输出时间线
         if self._console_enabled:

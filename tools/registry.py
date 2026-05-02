@@ -12,6 +12,7 @@ from enum import Enum
 import json
 import traceback
 from core.logger import get_logger
+from core.metrics import observe_tool_call
 
 logger = get_logger("ToolRegistry")
 
@@ -237,6 +238,76 @@ class ToolRegistry:
         return False
 
     # ----------------------------------------------------------
+    # 参数校验
+    # ----------------------------------------------------------
+
+    def _validate_args(self, tool_name: str, kwargs: dict) -> Optional[str]:
+        """校验工具参数是否合法
+
+        检查埋藏在 ToolParameter 元数据中的约束:
+          - 必填参数是否提供
+          - 参数类型是否匹配
+          - 枚举值是否合法
+          - 未提供可选参数时填入默认值
+
+        Returns:
+            error message (str) 或 None (校验通过)
+        """
+        tool_info = self._tools.get(tool_name)
+        if not tool_info:
+            return None  # 不在这里报错, execute() 会处理
+
+        for param in tool_info.parameters:
+            # 只校验 ToolParameter dataclass 格式的参数
+            if not isinstance(param, ToolParameter):
+                continue
+
+            value = kwargs.get(param.name)
+
+            # 1. 必填检查
+            if param.required and value is None:
+                return f"缺少必填参数 '{param.name}'"
+
+            # 2. 可选参数填入默认值
+            if value is None and param.default is not None:
+                kwargs[param.name] = param.default
+                continue
+            if value is None:
+                continue  # 未提供的可选参数, 跳过类型检查
+
+            # 3. 类型检查
+            if not self._check_type(value, param.type):
+                return (
+                    f"参数 '{param.name}' 类型错误: "
+                    f"期望 {param.type}, 实际 {type(value).__name__}"
+                )
+
+            # 4. 枚举值检查
+            if param.enum and str(value) not in param.enum:
+                return (
+                    f"参数 '{param.name}' 取值不在允许范围内: "
+                    f"{param.enum}, 实际 '{value}'"
+                )
+
+        return None  # 校验通过
+
+    @staticmethod
+    def _check_type(value: Any, expected_type: str) -> bool:
+        """检查值是否匹配期望类型"""
+        type_map = {
+            "string": (str,),
+            "number": (int, float),
+            "integer": (int,),
+            "boolean": (bool,),
+            "array": (list, tuple),
+            "object": (dict,),
+        }
+        allowed = type_map.get(expected_type)
+        if allowed is None:
+            return True  # 未知类型, 跳过检查
+        return isinstance(value, allowed)
+
+    # ----------------------------------------------------------
     # 执行方法（同步）
     # ----------------------------------------------------------
 
@@ -277,7 +348,18 @@ class ToolRegistry:
                 "result": None,
                 "error": f"工具 '{tool_name}' 已被禁用"
             }
-        
+
+        # 参数校验（在 rate_limiter 之前，避免浪费限流令牌）
+        validation_error = self._validate_args(tool_name, kwargs)
+        if validation_error:
+            tool_info.call_count += 1
+            tool_info.error_count += 1
+            return {
+                "success": False,
+                "result": None,
+                "error": validation_error,
+            }
+
         # 速率限制检查（集成 core.rate_limiter）
         try:
             from core.rate_limiter import _llm_limiter
@@ -293,7 +375,7 @@ class ToolRegistry:
         
         tool_info.call_count += 1
         start_time = time.time()
-        
+
         # Phase 1: Use ErrorChain if available
         if self._error_chain is not None:
             try:
@@ -310,21 +392,24 @@ class ToolRegistry:
                 # Check if it's an error response from ErrorChain
                 if isinstance(result, dict) and result.get('_error'):
                     tool_info.error_count += 1
+                    observe_tool_call(tool=tool_name, status="error", duration=latency)
                     return {"success": False, "result": None, "error": result.get('_message', 'Unknown error')}
                 tool_info.success_count += 1
                 logger.info(f"工具执行成功 (ErrorChain): {tool_name} ({latency:.3f}s)")
+                observe_tool_call(tool=tool_name, status="success", duration=latency)
                 return {"success": True, "result": result, "error": None, "latency": round(latency, 3)}
             except Exception as e:
                 latency = time.time() - start_time
                 tool_info.error_count += 1
                 error_msg = f"{type(e).__name__}: {str(e)}"
                 logger.error(f"工具执行失败 (ErrorChain): {tool_name} - {error_msg}")
+                observe_tool_call(tool=tool_name, status="error", duration=latency)
                 return {"success": False, "result": None, "error": error_msg}
-        
+
         # Original execution path (without ErrorChain)
         try:
             func = tool_info.func
-            
+
             # 如果是异步函数，用 asyncio 运行
             if asyncio.iscoroutinefunction(func):
                 loop = asyncio.get_event_loop()
@@ -339,24 +424,26 @@ class ToolRegistry:
             else:
                 # 同步函数，直接调用
                 result = func(**kwargs)
-            
+
             latency = time.time() - start_time
             tool_info.total_latency += latency
             tool_info.success_count += 1
-            
+
             logger.info(f"工具执行成功: {tool_name} ({latency:.3f}s)")
-            
+            observe_tool_call(tool=tool_name, status="success", duration=latency)
+
             return {
                 "success": True,
                 "result": result,
                 "error": None,
                 "latency": round(latency, 3)
             }
-            
+
         except asyncio.TimeoutError:
             latency = time.time() - start_time
             tool_info.error_count += 1
             tool_info.status = ToolStatus.TIMEOUT
+            observe_tool_call(tool=tool_name, status="timeout", duration=latency)
             return {
                 "success": False,
                 "result": None,
@@ -367,6 +454,7 @@ class ToolRegistry:
             tool_info.error_count += 1
             error_msg = f"{type(e).__name__}: {str(e)}"
             logger.error(f"工具执行失败: {tool_name} - {error_msg}")
+            observe_tool_call(tool=tool_name, status="error", duration=latency)
             return {
                 "success": False,
                 "result": None,

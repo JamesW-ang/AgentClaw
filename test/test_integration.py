@@ -296,7 +296,7 @@ class TestHealthCheckIntegration:
         """health 模块应可导入"""
         try:
             import tools.health
-            assert hasattr(health, 'health_check')
+            assert hasattr(tools.health, 'health_check')
         except ImportError:
             pytest.skip("health module not available")
 

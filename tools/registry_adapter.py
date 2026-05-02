@@ -13,12 +13,59 @@ logger = get_logger("registry_adapter")
 
 # 延迟导入，避免循环依赖
 _collector = None
+_learner = None
+_optimizer = None
+
+# 工具调用序列追踪（滑动窗口 20）
+_call_sequence: list = []
+_MAX_SEQUENCE = 20
+
 
 def set_feedback_collector(collector):
     """注入 FeedbackCollector 实例（由 main/demo_ui 启动时调用）"""
     global _collector
     _collector = collector
     logger.info("FeedbackCollector 已注入 RegistryAdapter")
+
+
+def set_learner(learner):
+    """注入 ExperienceLearner 实例（反模式检测用）"""
+    global _learner
+    _learner = learner
+    logger.info("ExperienceLearner 已注入 RegistryAdapter")
+
+
+def set_optimizer(optimizer):
+    """注入 AdaptiveOptimizer 实例"""
+    global _optimizer
+    _optimizer = optimizer
+    logger.info("AdaptiveOptimizer 已注入 RegistryAdapter")
+
+
+def record_call(tool_name: str):
+    """记录工具调用到序列（滑动窗口）"""
+    global _call_sequence
+    _call_sequence.append(tool_name)
+    if len(_call_sequence) > _MAX_SEQUENCE:
+        _call_sequence = _call_sequence[-_MAX_SEQUENCE:]
+
+
+def check_anti_pattern(tool_name: str):
+    """检查当前调用序列是否命中已知反模式"""
+    global _call_sequence, _learner
+    if _learner is None or len(_call_sequence) < 2:
+        return
+    try:
+        seq = list(_call_sequence) + [tool_name]
+        anti = _learner.check_anti_pattern(seq[-4:])
+        if anti:
+            logger.warning(
+                f"命中反模式 [{anti.name}]: "
+                f"{' -> '.join(seq[-4:])} "
+                f"(建议避免此调用路径)"
+            )
+    except Exception:
+        pass
 
 
 def _make_pydantic_schema(params):
@@ -35,12 +82,19 @@ def _make_pydantic_schema(params):
             ptype = getattr(p, 'type', None) or 'str'
             pdesc = getattr(p, 'description', name) or name
             pdefault = getattr(p, 'default', None)
+            prequired = getattr(p, 'required', True)
+            penum = getattr(p, 'enum', None)
 
             field_type = _type_map(ptype)
-            if pdefault is not None:
-                fields[name] = (field_type, Field(default=pdefault, description=pdesc))
-            else:
-                fields[name] = (field_type, Field(description=pdesc))
+
+            # 构建 Field 参数
+            field_kwargs = {"description": pdesc}
+            if not prequired or pdefault is not None:
+                field_kwargs["default"] = pdefault if pdefault is not None else None
+            if penum:
+                field_kwargs["json_schema_extra"] = {"enum": penum}
+
+            fields[name] = (field_type, Field(**field_kwargs))
 
         elif isinstance(p, str):
             fields[p] = (str, Field(description=p))
@@ -50,16 +104,27 @@ def _make_pydantic_schema(params):
             ftype = _type_map(p.get("type", "str"))
             fdesc = p.get("description", name)
             fdefault = p.get("default", None)
-            if fdefault is not None:
-                fields[name] = (ftype, Field(default=fdefault, description=fdesc))
-            else:
-                fields[name] = (ftype, Field(description=fdesc))
+            prequired = p.get("required", True)
+            penum = p.get("enum", None)
+
+            field_kwargs = {"description": fdesc}
+            if not prequired or fdefault is not None:
+                field_kwargs["default"] = fdefault if fdefault is not None else None
+            if penum:
+                field_kwargs["json_schema_extra"] = {"enum": penum}
+
+            fields[name] = (ftype, Field(**field_kwargs))
 
     return create_model("DynamicArgs", **fields) if fields else None
 
 
 def _type_map(t: str):
-    return {"str": str, "string": str, "int": int, "float": float, "bool": bool, "number": float}.get(t, str)
+    return {
+        "str": str, "string": str,
+        "int": int, "integer": int,
+        "float": float, "number": float,
+        "bool": bool, "boolean": bool,
+    }.get(t, str)
 
 
 class RegistryAdapter:
@@ -91,6 +156,9 @@ class RegistryAdapter:
                     error_type = None
                     latency = 0.0
 
+                    # Phase 3: 反模式检测
+                    check_anti_pattern(tool_name)
+
                     try:
                         result = registry.execute(tool_name, kwargs)
                         latency = time.perf_counter() - t0
@@ -112,6 +180,8 @@ class RegistryAdapter:
                         logger.error(f"工具 {tool_name} 异常: {e}", exc_info=True)
                         return f"工具异常: {e}"
                     finally:
+                        # 记录调用序列
+                        record_call(tool_name)
                         # 收集反馈信号（如果 collector 已注入）
                         if _collector is not None:
                             try:

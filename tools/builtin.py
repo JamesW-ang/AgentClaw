@@ -581,34 +581,38 @@ registry.register_func(
 # 9. knowledge_search — RAG 知识库搜索 (Step3: ChromaDB 自动切换)
 # ============================================================
 
-from tools.searcher import RAGEngine, create_rag_tool
+import threading
+from tools.searcher import RAGEngine
 
 # 延迟初始化 RAG 引擎
 _rag_engine = None
 _chroma_retriever = None  # ChromaDB 检索器 (Step3 升级)
+_chroma_store = None      # ChromaDB 存储实例（用于写入）
+_chroma_embeddings = None # 嵌入模型实例
+_chroma_lock = threading.Lock()
 
 
 def _get_rag_engine() -> RAGEngine:
     """获取 RAG 引擎，优先使用 ChromaDB（如果可用）"""
-    global _rag_engine, _chroma_retriever
+    global _rag_engine, _chroma_retriever, _chroma_store, _chroma_embeddings
     if _rag_engine is None:
         _rag_engine = RAGEngine(chunk_size=300, chunk_overlap=50)
 
         # Step3: 检测 ChromaDB 向量库，自动切换
-        db_path = os.path.join(os.path.dirname(__file__), "vector_db")
+        db_path = settings.CHROMA_DB_PATH
         if os.path.isdir(db_path):
             try:
                 from langchain_chroma import Chroma
                 from langchain_huggingface import HuggingFaceEmbeddings
 
-                embeddings = HuggingFaceEmbeddings(
+                _chroma_embeddings = HuggingFaceEmbeddings(
                     model_name="BAAI/bge-small-zh-v1.5"
                 )
-                chroma_store = Chroma(
+                _chroma_store = Chroma(
                     persist_directory=db_path,
-                    embedding_function=embeddings,
+                    embedding_function=_chroma_embeddings,
                 )
-                _chroma_retriever = chroma_store.as_retriever(
+                _chroma_retriever = _chroma_store.as_retriever(
                     search_kwargs={"k": 3}
                 )
                 logger.info(
@@ -621,9 +625,46 @@ def _get_rag_engine() -> RAGEngine:
             except Exception as e:
                 logger.warning(f"ChromaDB 加载失败: {e}，回退到 TF-IDF")
         else:
-            logger.info("未检测到 vector_db 目录，使用 TF-IDF 检索")
+            logger.info("未检测到 ChromaDB 目录，使用 TF-IDF 检索")
 
     return _rag_engine
+
+
+def _add_to_chroma(file_path_or_text: str, source_type: str = "file") -> int:
+    """将文档/文本写入 ChromaDB（如果可用），此操作在 TF-IDF 写入后调用"""
+    global _chroma_store, _chroma_embeddings
+    if _chroma_store is None or _chroma_embeddings is None:
+        return 0
+
+    with _chroma_lock:
+        try:
+            if source_type == "file" and os.path.isfile(file_path_or_text):
+                from langchain_community.document_loaders import TextLoader
+                from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+                loader = TextLoader(file_path_or_text, encoding="utf-8")
+                documents = loader.load()
+                splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=300, chunk_overlap=50
+                )
+                chunks = splitter.split_documents(documents)
+                for doc in chunks:
+                    doc.metadata["source"] = os.path.basename(file_path_or_text)
+                _chroma_store.add_documents(chunks)
+                count = len(chunks)
+                logger.info(f"ChromaDB 写入文件: {file_path_or_text} -> {count} chunks")
+                return count
+
+            elif source_type == "text":
+                _chroma_store.add_texts(
+                    texts=[file_path_or_text],
+                    metadatas=[{"source": "manual"}],
+                )
+                logger.info(f"ChromaDB 写入文本: {file_path_or_text[:50]}...")
+                return 1
+        except Exception as e:
+            logger.warning(f"ChromaDB 写入失败 (不影响 TF-IDF): {e}")
+        return 0
 
 
 def rag_search(query: str, top_k: int = 3) -> dict:
@@ -701,12 +742,16 @@ registry.register_func(
 def rag_add_documents(file_path: str) -> int:
     """向共享 RAG 引擎添加文档（供 demo_ui Tab2 调用）"""
     engine = _get_rag_engine()
-    return engine.add_documents(file_path)
+    count = engine.add_documents(file_path)
+    _add_to_chroma(file_path, source_type="file")
+    return count
 
 def rag_add_text_to_shared(text: str, source: str = "手动输入") -> int:
     """向共享 RAG 引擎添加文本"""
     engine = _get_rag_engine()
-    return engine.add_text(text, source=source)
+    count = engine.add_text(text, source=source)
+    _add_to_chroma(text, source_type="text")
+    return count
 
 def rag_clear_shared():
     """清空共享 RAG 引擎"""
@@ -714,7 +759,25 @@ def rag_clear_shared():
     engine.clear()
 
 def rag_search_shared(query: str, top_k: int = 3):
-    """搜索共享 RAG 引擎"""
+    """搜索共享 RAG 引擎（优先 ChromaDB，回退 TF-IDF）"""
+    _get_rag_engine()
+
+    # 优先 ChromaDB
+    if _chroma_retriever is not None:
+        docs = _chroma_retriever.invoke(query)
+        formatted = []
+        for i, doc in enumerate(docs[:top_k], 1):
+            content = doc.page_content if hasattr(doc, 'page_content') else str(doc)
+            source = doc.metadata.get("source", "ChromaDB") if hasattr(doc, 'metadata') else "ChromaDB"
+            formatted.append({
+                "rank": i,
+                "score": round(1.0 / (i + 1), 4),
+                "content": content[:500],
+                "source": source,
+            })
+        return formatted
+
+    # 回退 TF-IDF
     engine = _get_rag_engine()
     results = engine.search(query, top_k=top_k)
     formatted = []
@@ -730,7 +793,13 @@ def rag_search_shared(query: str, top_k: int = 3):
 def rag_get_shared_stats():
     """获取共享 RAG 引擎统计"""
     engine = _get_rag_engine()
-    return engine.get_stats()
+    stats = engine.get_stats()
+    if _chroma_store is not None:
+        stats["backend"] = "chromadb"
+        stats["embedding_model"] = "BAAI/bge-small-zh-v1.5"
+    else:
+        stats["backend"] = "tfidf"
+    return stats
 
 
 # ============================================================

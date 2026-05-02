@@ -38,6 +38,7 @@ from enum import Enum
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, List, Dict, Tuple
 from collections import OrderedDict
+from core.metrics import observe_llm_call, observe_llm_error
 
 logger = logging.getLogger(__name__)
 
@@ -411,7 +412,7 @@ class LLMGuard:
         )
 
         # 缓存
-        self.cache = LLMCache(max_size=cache_size, ttl=cache_ttl)
+        self.cache = LLMCache(max_size=cache_size, ttl_seconds=cache_ttl)
 
         # 统计
         self._stats = {
@@ -466,6 +467,9 @@ class LLMGuard:
         stream: bool = False,
         system_prompt: str = None,
         timeout: float = None,
+        tools: list = None,
+        tool_choice: Any = None,
+        response_format: dict = None,
         **kwargs,
     ) -> LLMResult:
         """
@@ -479,6 +483,9 @@ class LLMGuard:
             stream:         是否流式
             system_prompt:  系统提示词 (会自动加到 messages 开头)
             timeout:        本次调用超时 (秒, 为空用默认策略)
+            tools:          工具定义列表 (OpenAI function calling 格式)
+            tool_choice:    工具选择策略 ("auto" / "none" / "required" / {"type": "function", "function": {"name": "..."}})
+            response_format: 响应格式约束 (如 {"type": "json_object"})
             **kwargs:       透传给 OpenAI API 的额外参数
 
         Returns:
@@ -500,6 +507,7 @@ class LLMGuard:
         # 获取 trace (如果有)
         trace = self._get_active_trace()
         trace_id = trace.id if trace else ""
+        _start_time = time.time()
 
         # ── 尝试 1: 主模型 + 重试 ──
         result = self._call_with_retry(
@@ -510,6 +518,9 @@ class LLMGuard:
             stream=stream,
             timeout=timeout,
             trace=trace,
+            tools=tools,
+            tool_choice=tool_choice,
+            response_format=response_format,
         )
 
         if result.success:
@@ -517,6 +528,11 @@ class LLMGuard:
             # 写缓存 (非流式)
             if not stream and result.content:
                 self.cache.put(final_messages, result.content, effective_model)
+            observe_llm_call(
+                model=result.model, status="success",
+                duration=result.latency_ms / 1000,
+                tokens_in=result.tokens_in, tokens_out=result.tokens_out,
+            )
             return result
 
         # ── 尝试 2: 备用模型 ──
@@ -537,6 +553,9 @@ class LLMGuard:
                 stream=stream,
                 timeout=timeout,
                 trace=trace,
+                tools=tools,
+                tool_choice=tool_choice,
+                response_format=response_format,
             )
 
             if backup_result.success:
@@ -546,6 +565,11 @@ class LLMGuard:
                 self._stats['fallback'] += 1
                 if not stream and backup_result.content:
                     self.cache.put(final_messages, backup_result.content, backup)
+                observe_llm_call(
+                    model=backup_result.model, status="fallback",
+                    duration=backup_result.latency_ms / 1000,
+                    tokens_in=backup_result.tokens_in, tokens_out=backup_result.tokens_out,
+                )
                 return backup_result
 
         # ── 尝试 3: 缓存降级 ──
@@ -555,11 +579,17 @@ class LLMGuard:
             )
             if cached:
                 self._stats['fallback'] += 1
+                observe_llm_call(model=effective_model, status="cache", duration=0)
                 return cached
 
         # ── 兜底: 优雅降级 ──
         self._stats['errors'] += 1
         self._report_to_learner(result, final_messages)
+
+        elapsed = time.time() - _start_time
+        observe_llm_call(model=effective_model, status="error", duration=elapsed,
+                         tokens_in=result.tokens_in, tokens_out=result.tokens_out)
+        observe_llm_error(error_type=result.error_type or "unknown")
 
         fallback_result = LLMResult(
             content=self.fallback.graceful_message,
@@ -612,6 +642,7 @@ class LLMGuard:
     def _call_with_retry(
         self, messages, model, temperature, max_tokens,
         stream, timeout, trace,
+        tools=None, tool_choice=None, response_format=None,
     ) -> LLMResult:
         """带重试的 LLM 调用"""
         effective_timeout = timeout or self.retry.base_timeout
@@ -658,6 +689,13 @@ class LLMGuard:
                 }
                 # openai 客户端的 timeout 参数
                 api_kwargs['timeout'] = current_timeout
+                # 透传工具定义 (function calling / structured output)
+                if tools is not None:
+                    api_kwargs['tools'] = tools
+                if tool_choice is not None:
+                    api_kwargs['tool_choice'] = tool_choice
+                if response_format is not None:
+                    api_kwargs['response_format'] = response_format
                 api_kwargs.update(self._filter_kwargs(kwargs={}))
 
                 response = client.chat.completions.create(**api_kwargs)
@@ -674,11 +712,24 @@ class LLMGuard:
                         span.set_tokens(tokens_in, tokens_out)
                     span.__exit__(None, None, None)
 
+                if stream:
+                    # 流式模式: 不预收集内容, 返回原始 stream 迭代器
+                    # 调用方通过 result.stream 逐 token 消费
+                    return LLMResult(
+                        content="",
+                        stream=response,
+                        model=model,
+                        latency_ms=latency_ms,
+                        tokens_in=0,
+                        tokens_out=0,
+                        success=True,
+                        attempts=attempt,
+                        trace_id=trace.id if trace else "",
+                    )
+
                 return LLMResult(
-                    content=self._collect_response(response) if stream else (
-                        response.choices[0].message.content if response.choices else ""
-                    ),
-                    stream=response if stream else None,
+                    content=response.choices[0].message.content if response.choices else "",
+                    stream=None,
                     model=model,
                     latency_ms=latency_ms,
                     tokens_in=getattr(getattr(response, 'usage', None), 'prompt_tokens', 0) or 0,
@@ -814,6 +865,7 @@ class LLMGuard:
         allowed = {
             'top_p', 'frequency_penalty', 'presence_penalty',
             'stop', 'n', 'logit_bias', 'user',
+            'tools', 'tool_choice', 'response_format',
         }
         return {k: v for k, v in kwargs.items() if k in allowed}
 

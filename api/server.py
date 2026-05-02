@@ -3,11 +3,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import time
+import json
 import psutil
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessageChunk
 from core.logger import get_logger
 
 logger = get_logger("APIServer")
@@ -35,13 +37,15 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"]
 )
 
+from prometheus_client import make_asgi_app
+from core.metrics import update_system_gauges
 from tools.security import SecurityMiddleware
 from core.config import settings
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
-    SKIP_PATHS = {"/health", "/docs", "/openapi.json", "/health/detailed"}
+    SKIP_PATHS = {"/health", "/docs", "/openapi.json", "/health/detailed", "/metrics", "/metrics/"}
 
     async def dispatch(self, request: Request, call_next):
         if request.url.path in self.SKIP_PATHS:
@@ -91,19 +95,26 @@ async def ask(req: Question):
         )
 
     try:
-        from agent.core import get_react_agent
+        from agent.core import get_react_agent, get_langfuse_handler
         agent_app = get_react_agent()
+        langfuse_handler = get_langfuse_handler(session_id=req.session_id)
 
         if trace is not None:
             with span_context(trace, "agent.react", SpanKind.AGENT) as ctx:
-                config = {"configurable": {"thread_id": req.session_id}}
+                config = {
+                    "configurable": {"thread_id": req.session_id},
+                    "callbacks": [langfuse_handler] if langfuse_handler else [],
+                }
                 result = await agent_app.ainvoke(
                     {"messages": [HumanMessage(content=req.question)]}, config
                 )
                 last_msg = result["messages"][-1]
                 ctx.set_output(last_msg.content[:500])
         else:
-            config = {"configurable": {"thread_id": req.session_id}}
+            config = {
+                "configurable": {"thread_id": req.session_id},
+                "callbacks": [langfuse_handler] if langfuse_handler else [],
+            }
             result = await agent_app.ainvoke(
                 {"messages": [HumanMessage(content=req.question)]}, config
             )
@@ -145,6 +156,61 @@ async def ask(req: Question):
 
         return Answer(answer=f"处理失败: {e}", usage=usage_data)
 
+
+@app.post("/ask/stream")
+async def ask_stream(req: Question):
+    """SSE 流式问答接口 — 逐 token 流式返回 Agent 响应"""
+    logger.info(f"收到流式请求: session={req.session_id}, q={req.question[:50]}")
+
+    async def event_generator():
+        try:
+            from agent.core import get_react_agent, get_langfuse_handler
+            agent_app = get_react_agent()
+            langfuse_handler = get_langfuse_handler(session_id=req.session_id)
+            config = {
+                "configurable": {"thread_id": req.session_id},
+                "callbacks": [langfuse_handler] if langfuse_handler else [],
+            }
+
+            input_data = {"messages": [HumanMessage(content=req.question)]}
+
+            async for event in agent_app.astream(
+                input_data,
+                config,
+                stream_mode="messages",
+            ):
+                chunk_msg, metadata = event
+
+                if not isinstance(chunk_msg, AIMessageChunk):
+                    continue
+
+                # 文本 token
+                if chunk_msg.content:
+                    yield f"data: {json.dumps({'type': 'token', 'content': chunk_msg.content}, ensure_ascii=False)}\n\n"
+
+                # 工具调用增量
+                if chunk_msg.tool_call_chunks:
+                    for tc in chunk_msg.tool_call_chunks:
+                        yield f"data: {json.dumps({'type': 'tool_call', 'id': tc.get('id'), 'name': tc.get('name'), 'args': tc.get('args'), 'index': tc.get('index')}, ensure_ascii=False)}\n\n"
+
+            # 流结束
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        except Exception as e:
+            logger.error(f"流式请求失败: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.get("/health")
 async def health():
     """基础健康检查：返回服务状态、运行时间、资源使用"""
@@ -162,6 +228,19 @@ async def health():
 async def detailed_health():
     """详细健康检查：ChromaDB + LLM API + 系统内存"""
     return _detailed_health_check()
+
+# Metrics 端点
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
+
+@app.on_event("startup")
+async def startup_metrics():
+    """初始化系统指标"""
+    try:
+        from tools.registry import registry
+        update_system_gauges(tool_count=len(registry._tools))
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     import uvicorn

@@ -34,6 +34,7 @@ AgentClaw v6 — 统一 Agent 核心
 """
 
 import sys
+import time
 from pathlib import Path
 
 # 确保工作目录正确
@@ -49,6 +50,44 @@ logger = get_logger("AgentCore")
 _initialized = False
 _evolution_manager = None
 _feedback_collector = None
+
+# LangFuse 可观测性
+_langfuse_tracer = None
+
+def _get_langfuse_tracer():
+    """延迟初始化 LangFuse tracer"""
+    global _langfuse_tracer
+    if _langfuse_tracer is None:
+        try:
+            from tools.langfuse_adapter import LangFuseTracer
+            _langfuse_tracer = LangFuseTracer()
+            if _langfuse_tracer.enabled:
+                logger.info("LangFuse 可观测性已启用")
+            else:
+                logger.info("LangFuse 未配置 (LANGFUSE_PUBLIC_KEY/SECRET_KEY 未设置)")
+        except Exception as e:
+            logger.warning(f"LangFuse 初始化失败: {e}")
+            _langfuse_tracer = None
+    return _langfuse_tracer
+
+
+def get_langfuse_handler(session_id: str = None, user_id: str = None):
+    """
+    获取 LangFuse 回调处理器（供 invoke/astream 时传入 callbacks）。
+    如果不返回 handler=LangFuse 未启用
+
+    Usage:
+        handler = get_langfuse_handler(session_id="user-1")
+        agent.invoke(input, config={"callbacks": [handler]})
+    """
+    tracer = _get_langfuse_tracer()
+    if tracer and tracer.enabled:
+        return tracer.get_callback_handler(
+            session_id=session_id or "default",
+            user_id=user_id,
+            tags=["agentclaw"],
+        )
+    return None
 
 
 # ============================================================
@@ -125,6 +164,82 @@ def get_react_tools():
 # ============================================================
 
 _react_agent_instance = None
+_learned_prompt_cache = {"prompt": None, "timestamp": 0}
+_sqlite_checkpointer = None
+
+def _build_agent_prompt() -> str:
+    """构建 Agent 系统提示词，含学习策略注入（缓存 10 分钟）"""
+    prompt = (
+        "你是 AgentClaw 智能助手，拥有以下能力：\n"
+        "1. web_search — 搜索互联网获取最新信息\n"
+        "2. calculator — 安全数学计算（支持函数）\n"
+        "3. file_read / file_write — 安全文件读写\n"
+        "4. run_command — 安全执行系统命令\n"
+        "5. code_execute — 沙箱中执行 Python 代码\n"
+        "6. vision_analyze / vision_ocr / vision_compare — 图片分析和OCR\n"
+        "7. image_generate — AI 文生图\n"
+        "8. knowledge_search — RAG 知识库检索\n"
+        "9. sys_monitor / sys_process_list / sys_disk_info — 系统监控\n"
+        "10. process_start / process_stop / process_list — 进程管理\n"
+        "11. browser_navigate / browser_screenshot — 浏览器控制\n"
+        "12. aoi_detect — AOI 电路板缺陷检测\n"
+        "13. xml_config_read — 读取 AOI XML 配置文件（视觉参数/运动坐标）\n"
+        "14. xml_config_write — 修改 AOI XML 配置参数（含备份、校验、原子写入）\n"
+        "15. xml_config_diff — 对比当前配置与默认值的差异\n\n"
+        "根据用户需求自动选择合适的工具。回答要准确、专业、清晰。\n"
+        "如果工具执行失败，尝试用其他方式解决问题，并向用户解释。"
+    )
+
+    # Phase 3: 注入学习策略（如果可用且缓存未过期）
+    global _evolution_manager
+    now = time.time()
+    if (_learned_prompt_cache["prompt"] is not None
+            and now - _learned_prompt_cache["timestamp"] < 600):
+        return _learned_prompt_cache["prompt"]
+
+    try:
+        if _evolution_manager is not None:
+            learner = getattr(_evolution_manager, 'learner', None)
+            if learner and learner.strategies:
+                strategies = learner.strategies
+                # 正向策略: effectiveness > 0.5
+                good = sorted(
+                    [s for s in strategies.values()
+                     if not s.anti_pattern and s.effectiveness > 0.5],
+                    key=lambda s: s.effectiveness, reverse=True
+                )[:3]
+                # 反模式: confidence > 0.5
+                bad = sorted(
+                    [s for s in strategies.values()
+                     if s.anti_pattern and s.confidence > 0.5],
+                    key=lambda s: s.confidence, reverse=True
+                )[:3]
+
+                parts = [prompt]
+                if good:
+                    parts.append("\n\n[学习策略提示]")
+                    for s in good:
+                        seq = " → ".join(s.tool_sequence[:3])
+                        parts.append(
+                            f"- 模式「{s.name}」: {seq} "
+                            f"(效果评分 {s.effectiveness:.2f})"
+                        )
+                if bad:
+                    parts.append("\n[应避免的模式]")
+                    for s in bad:
+                        seq = " → ".join(s.tool_sequence[:3])
+                        parts.append(
+                            f"- 反模式「{s.name}」: {seq} "
+                            f"(置信度 {s.confidence:.2f})"
+                        )
+                prompt = "\n".join(parts)
+    except Exception as e:
+        logger.debug(f"策略注入未生效: {e}")
+
+    _learned_prompt_cache["prompt"] = prompt
+    _learned_prompt_cache["timestamp"] = time.time()
+    return prompt
+
 
 def get_react_agent():
     """
@@ -132,14 +247,14 @@ def get_react_agent():
     该 Agent 拥有全部已注册工具，可以自动选择合适的工具完成任务。
     Phase 1: 使用 LLMGuard 容错模式包装 LLM 调用。
     """
-    global _react_agent_instance
+    global _react_agent_instance, _sqlite_checkpointer
     if _react_agent_instance is not None:
         return _react_agent_instance
 
-    from core.retry import retry_with_backoff
+    import sqlite3
     from langchain_openai import ChatOpenAI
     from langgraph.prebuilt import create_react_agent
-    from langgraph.checkpoint.memory import MemorySaver
+    from langgraph.checkpoint.sqlite import SqliteSaver
 
     # Phase 1: Use LLMGuard for fault-tolerant LLM calls
     try:
@@ -174,30 +289,19 @@ def get_react_agent():
     except Exception as e:
         logger.warning(f"反馈采集器注入失败: {e}")
 
+    # SQLite checkpointer for persistent conversation history
+    if _sqlite_checkpointer is None:
+        db_path = SCRIPT_DIR / "data" / "agent_checkpoints.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        _sqlite_checkpointer = SqliteSaver(conn)
+        logger.info(f"对话持久化已启用 (SQLite: {db_path})")
+
     _react_agent_instance = create_react_agent(
         model=llm,
         tools=tools,
-        prompt=(
-            "你是 AgentClaw 智能助手，拥有以下能力：\n"
-            "1. web_search — 搜索互联网获取最新信息\n"
-            "2. calculator — 安全数学计算（支持函数）\n"
-            "3. file_read / file_write — 安全文件读写\n"
-            "4. run_command — 安全执行系统命令\n"
-            "5. code_execute — 沙箱中执行 Python 代码\n"
-            "6. vision_analyze / vision_ocr / vision_compare — 图片分析和OCR\n"
-            "7. image_generate — AI 文生图\n"
-            "8. knowledge_search — RAG 知识库检索\n"
-            "9. sys_monitor / sys_process_list / sys_disk_info — 系统监控\n"
-            "10. process_start / process_stop / process_list — 进程管理\n"
-            "11. browser_navigate / browser_screenshot — 浏览器控制\n"
-            "12. aoi_detect — AOI 电路板缺陷检测\n"
-            "13. xml_config_read — 读取 AOI XML 配置文件（视觉参数/运动坐标）\n"
-            "14. xml_config_write — 修改 AOI XML 配置参数（含备份、校验、原子写入）\n"
-            "15. xml_config_diff — 对比当前配置与默认值的差异\n\n"
-            "根据用户需求自动选择合适的工具。回答要准确、专业、清晰。\n"
-            "如果工具执行失败，尝试用其他方式解决问题，并向用户解释。"
-        ),
-        checkpointer=MemorySaver(),
+        prompt=_build_agent_prompt(),
+        checkpointer=_sqlite_checkpointer,
     )
 
     logger.info("统一 ReAct Agent 创建完成（含全部注册工具）")
@@ -269,6 +373,10 @@ def init_evolution(interval: int = 3600):
         optimizer = AdaptiveOptimizer()
         _evolution_manager = EvolutionManager(_feedback_collector, learner, optimizer)
         _evolution_manager.start_evolution_loop(interval=interval)
+        # 注入到 RegistryAdapter（反模式检测 + 策略优化）
+        from tools.registry_adapter import set_learner, set_optimizer
+        set_learner(learner)
+        set_optimizer(optimizer)
         logger.info(f"自主学习系统已启动 (间隔 {interval}s)")
         return _evolution_manager
     except Exception as e:

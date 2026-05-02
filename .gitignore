@@ -71,3 +71,7 @@ yolo11n.onnx
 yolo11n.pt
 yolov5su.onnx
 yolov5su.pt
+
+# Runtime data files
+*.db
+data/traces/

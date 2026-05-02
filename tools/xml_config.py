@@ -763,7 +763,8 @@ def register_xml_config_tools():
 # 自测
 # ============================================================
 
-if __name__ == "__main__":
+def main():
+    """xml_config 工具模块自测"""
     import tempfile
 
     print("=" * 60)
@@ -922,3 +923,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("全部测试通过!")
     print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()
