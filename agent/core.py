@@ -26,7 +26,7 @@ AgentClaw v6 — 统一 Agent 核心
 
 使用方式:
     # 在 demo_ui.py / api_server.py 中:
-    from agent_core import get_react_agent
+    from agent.core import get_react_agent
 
     agent = get_react_agent()
     result = agent.invoke({"messages": [("human", "帮我搜索Python最新版本")]},
@@ -37,7 +37,7 @@ import sys
 from pathlib import Path
 
 # 确保工作目录正确
-SCRIPT_DIR = Path(__file__).parent
+SCRIPT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from core.config import settings
@@ -68,6 +68,9 @@ def init_all_tools():
         1. builtin_tools  -> 5个核心工具 + 8个os_tools + 1个knowledge_search (14个)
         2. vision_tool    -> vision_analyze, vision_ocr, vision_compare (3个)
         3. multimodal_image_gen -> image_generate (1个)
+        4. aoi_engine     -> aoi_detect (1个)
+        5. xml_config_tool -> xml_config_read/write/diff (3个)
+        总计: 22 个工具，全部挂载到 tool_registry
     """
     global _initialized
     if _initialized:
@@ -76,20 +79,24 @@ def init_all_tools():
     logger.info("开始初始化工具注册中心...")
 
     # 1. 内置工具（装饰器自动注册，内部已包含 os_tools 和 rag_searcher 的注册）
-    import builtin_tools
+    import tools.builtin
 
     # 2. 视觉工具（底部 try/except 自动注册 3 个工具）
-    import vision_tool
+    import tools.vision
 
     # 3. 图片生成工具（@registry.register 自动注册 1 个工具）
-    import multimodal_image_gen
+    import tools.image_gen
 
     # 4. AOI 检测工具
-    import aoi_engine
-    aoi_engine.register_aoi_tools()
+    import aoi.engine
+    aoi.engine.register_aoi_tools()
+
+    # 5. XML 配置管理工具（AOI 闭环调参支持）
+    import tools.xml_config
+    tools.xml_config.register_xml_config_tools()
 
     # 打印注册结果
-    from tool_registry import registry
+    from tools.registry import registry
     tools = registry.list_tools()
     logger.info(f"工具注册完成: {len(tools)} 个 -> {tools}")
 
@@ -106,7 +113,7 @@ def get_react_tools():
     通过 RegistryAdapter 将 tool_registry 中的所有工具转换为 StructuredTool。
     """
     init_all_tools()
-    from registry_adapter import RegistryAdapter
+    from tools.registry_adapter import RegistryAdapter
     adapter = RegistryAdapter()
     tools = adapter.get_langchain_tools()
     logger.info(f"LangGraph 工具列表: {len(tools)} 个 -> {[t.name for t in tools]}")
@@ -159,8 +166,8 @@ def get_react_agent():
 
     # Phase 3: 注入反馈采集器到 RegistryAdapter（统一 Agent 全局生效）
     try:
-        from feedback_collector import FeedbackCollector
-        from registry_adapter import set_feedback_collector
+        from learning.feedback import FeedbackCollector
+        from tools.registry_adapter import set_feedback_collector
         collector = FeedbackCollector(persist_dir=str(SCRIPT_DIR / "evolution_data"))
         set_feedback_collector(collector)
         logger.info("统一 Agent 已接入反馈采集")
@@ -183,7 +190,10 @@ def get_react_agent():
             "9. sys_monitor / sys_process_list / sys_disk_info — 系统监控\n"
             "10. process_start / process_stop / process_list — 进程管理\n"
             "11. browser_navigate / browser_screenshot — 浏览器控制\n"
-            "12. aoi_detect — AOI 电路板缺陷检测\n\n"
+            "12. aoi_detect — AOI 电路板缺陷检测\n"
+            "13. xml_config_read — 读取 AOI XML 配置文件（视觉参数/运动坐标）\n"
+            "14. xml_config_write — 修改 AOI XML 配置参数（含备份、校验、原子写入）\n"
+            "15. xml_config_diff — 对比当前配置与默认值的差异\n\n"
             "根据用户需求自动选择合适的工具。回答要准确、专业、清晰。\n"
             "如果工具执行失败，尝试用其他方式解决问题，并向用户解释。"
         ),
@@ -214,7 +224,7 @@ def init_chains():
         )
 
         # Inject ErrorChain into tool_registry
-        from tool_registry import registry
+        from tools.registry import registry
         registry.set_error_chain(error_chain)
 
         logger.info("三链联动系统已初始化 (ErrorChain + TraceChain)")
@@ -249,10 +259,10 @@ def init_evolution(interval: int = 3600):
         return _evolution_manager
 
     try:
-        from feedback_collector import FeedbackCollector
-        from experience_learner import ExperienceLearner
-        from adaptive_optimizer import AdaptiveOptimizer
-        from evolution_manage import EvolutionManager
+        from learning.feedback import FeedbackCollector
+        from learning.learner import ExperienceLearner
+        from learning.optimizer import AdaptiveOptimizer
+        from learning.evolution import EvolutionManager
 
         _feedback_collector = FeedbackCollector()
         learner = ExperienceLearner(_feedback_collector)
@@ -286,7 +296,7 @@ def record_feedback(task_id: str, tool_name: str, success: bool,
     if _feedback_collector is None:
         init_evolution()
     if _feedback_collector is not None:
-        from feedback_collector import FeedbackSignal
+        from learning.feedback import FeedbackSignal
         _feedback_collector.collect(FeedbackSignal(
             task_id=task_id,
             tool_name=tool_name,
@@ -304,7 +314,7 @@ def record_feedback(task_id: str, tool_name: str, success: bool,
 def get_tool_summary() -> dict:
     """获取所有工具的摘要信息，用于 UI 展示"""
     init_all_tools()
-    from tool_registry import registry
+    from tools.registry import registry
     return {
         "total": len(registry.list_tools()),
         "tools": registry.list_tools(),
@@ -329,7 +339,7 @@ if __name__ == "__main__":
     init_all_tools()
 
     # 2. 显示注册结果
-    from tool_registry import registry
+    from tools.registry import registry
     tools = registry.list_tools()
     print(f"\n已注册工具 ({len(tools)} 个):")
     for name in tools:

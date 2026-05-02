@@ -17,7 +17,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 # 导入工具注册中心
-from tool_registry import registry, ToolCategory
+from tools.registry import registry, ToolCategory
 
 # v6: 统一配置
 from core.config import settings
@@ -581,7 +581,7 @@ registry.register_func(
 # 9. knowledge_search — RAG 知识库搜索 (Step3: ChromaDB 自动切换)
 # ============================================================
 
-from rag_searcher import RAGEngine, create_rag_tool
+from tools.searcher import RAGEngine, create_rag_tool
 
 # 延迟初始化 RAG 引擎
 _rag_engine = None

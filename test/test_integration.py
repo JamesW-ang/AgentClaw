@@ -47,7 +47,7 @@ class TestEndToEndRegistryFlow:
 
     def test_full_register_execute_stats_cycle(self):
         """完整注册-执行-统计周期"""
-        from tool_registry import ToolRegistry, ToolCategory
+        from tools.registry import ToolRegistry, ToolCategory
 
         ToolRegistry._instance = None
         reg = ToolRegistry()
@@ -76,7 +76,7 @@ class TestEndToEndRegistryFlow:
 
     def test_register_multiple_tools_and_search(self):
         """注册多个工具后 LLM schema 应包含全部"""
-        from tool_registry import ToolRegistry, ToolCategory
+        from tools.registry import ToolRegistry, ToolCategory
 
         ToolRegistry._instance = None
         reg = ToolRegistry()
@@ -141,7 +141,7 @@ class TestErrorHandlingChain:
 
     def test_registry_wraps_exception(self):
         """Registry.execute() 应将异常包装为统一格式"""
-        from tool_registry import ToolRegistry
+        from tools.registry import ToolRegistry
 
         ToolRegistry._instance = None
         reg = ToolRegistry()
@@ -158,7 +158,7 @@ class TestErrorHandlingChain:
 
     def test_retry_with_registry(self):
         """重试装饰器 + Registry 集成（需等待限流器冷却）"""
-        from tool_registry import ToolRegistry
+        from tools.registry import ToolRegistry
         try:
             from core.retry import retry_with_backoff
         except ImportError:
@@ -185,7 +185,7 @@ class TestErrorHandlingChain:
 
     def test_registry_handles_rate_limiting(self):
         """Registry 连续快速调用同工具应正确处理速率限制"""
-        from tool_registry import ToolRegistry
+        from tools.registry import ToolRegistry
         ToolRegistry._instance = None
         reg = ToolRegistry()
 
@@ -221,10 +221,10 @@ class TestSecurityValidation:
     def test_file_read_blocks_sensitive_paths(self):
         """file_read 应阻止读取敏感路径"""
         try:
-            from tool_registry import ToolRegistry
+            from tools.registry import ToolRegistry
             ToolRegistry._instance = None
-            import builtin_tools  # noqa: F401
-            from tool_registry import registry
+            import tools.builtin  # noqa: F401
+            from tools.registry import registry
 
             result = registry.execute("file_read", file_path="/etc/shadow")
             assert result["success"] is False
@@ -234,10 +234,10 @@ class TestSecurityValidation:
     def test_run_command_blocks_dangerous(self):
         """run_command 应阻止危险命令"""
         try:
-            from tool_registry import ToolRegistry
+            from tools.registry import ToolRegistry
             ToolRegistry._instance = None
-            import builtin_tools  # noqa: F401
-            from tool_registry import registry
+            import tools.builtin  # noqa: F401
+            from tools.registry import registry
 
             result = registry.execute("run_command", command="rm -rf /")
             assert result["success"] is False
@@ -247,10 +247,10 @@ class TestSecurityValidation:
     def test_multiple_dangerous_commands_blocked(self):
         """多种危险命令均应被阻止"""
         try:
-            from tool_registry import ToolRegistry
+            from tools.registry import ToolRegistry
             ToolRegistry._instance = None
-            import builtin_tools  # noqa: F401
-            from tool_registry import registry
+            import tools.builtin  # noqa: F401
+            from tools.registry import registry
 
             dangerous_commands = [
                 "rm -rf /",
@@ -267,10 +267,10 @@ class TestSecurityValidation:
     def test_safe_commands_pass(self):
         """安全命令应被允许执行"""
         try:
-            from tool_registry import ToolRegistry
+            from tools.registry import ToolRegistry
             ToolRegistry._instance = None
-            import builtin_tools  # noqa: F401
-            from tool_registry import registry
+            import tools.builtin  # noqa: F401
+            from tools.registry import registry
 
             safe_commands = [
                 "ls -la",
@@ -295,7 +295,7 @@ class TestHealthCheckIntegration:
     def test_health_module_importable(self):
         """health 模块应可导入"""
         try:
-            import health
+            import tools.health
             assert hasattr(health, 'health_check')
         except ImportError:
             pytest.skip("health module not available")
@@ -303,7 +303,7 @@ class TestHealthCheckIntegration:
     def test_health_check_returns_json_response(self):
         """health_check 应返回 JSONResponse（不是 dict）"""
         try:
-            from health import health_check
+            from tools.health import health_check
             # health_check 依赖 psutil 和实际网络调用，需要 mock
             mock_mem = MagicMock()
             mock_mem.percent = 45
@@ -328,7 +328,7 @@ class TestSecurityMiddlewareIntegration:
     def test_sql_injection_detected(self):
         """SQL 注入模式应被检测到"""
         try:
-            from security import SecurityMiddleware
+            from tools.security import SecurityMiddleware
             import re
             sql_payloads = [
                 "SELECT * FROM users",
@@ -347,7 +347,7 @@ class TestSecurityMiddlewareIntegration:
     def test_xss_detected(self):
         """XSS 模式应被检测到"""
         try:
-            from security import SecurityMiddleware
+            from tools.security import SecurityMiddleware
             import re
             xss_payloads = [
                 "<script>alert('xss')</script>",

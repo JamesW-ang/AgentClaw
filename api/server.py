@@ -35,7 +35,7 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"]
 )
 
-from security import SecurityMiddleware
+from tools.security import SecurityMiddleware
 from core.config import settings
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -64,7 +64,7 @@ app.add_middleware(SecurityMiddleware)
 app.add_middleware(APIKeyMiddleware)
 
 # 集成健康检查模块
-from health import health_check as _detailed_health_check
+from tools.health import health_check as _detailed_health_check
 
 class Question(BaseModel):
     question: str
@@ -91,7 +91,7 @@ async def ask(req: Question):
         )
 
     try:
-        from agent_core import get_react_agent
+        from agent.core import get_react_agent
         agent_app = get_react_agent()
 
         if trace is not None:

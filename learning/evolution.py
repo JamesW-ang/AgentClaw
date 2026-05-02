@@ -19,9 +19,9 @@ import time
 from collections import defaultdict
 from typing import Optional, List, Dict
 
-from feedback_collector import FeedbackCollector
-from experience_learner import ExperienceLearner, Strategy
-from adaptive_optimizer import AdaptiveOptimizer
+from learning.feedback import FeedbackCollector
+from learning.learner import ExperienceLearner, Strategy
+from learning.optimizer import AdaptiveOptimizer
 
 from core.logger import get_logger
 logger = get_logger("evolution_manager")

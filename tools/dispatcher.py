@@ -6,7 +6,7 @@
 
 import json
 from openai import OpenAI
-from tool_registry import registry, ToolInfo, ToolParameter
+from tools.registry import registry, ToolInfo, ToolParameter
 from core.config import settings
 
 

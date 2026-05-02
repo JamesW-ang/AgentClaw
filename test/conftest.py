@@ -39,7 +39,7 @@ def _reset_registry():
     """每个测试后重置 ToolRegistry 单例，避免跨测试状态泄露"""
     yield
     try:
-        from tool_registry import ToolRegistry
+        from tools.registry import ToolRegistry
         ToolRegistry._instance = None
     except ImportError:
         pass

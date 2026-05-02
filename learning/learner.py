@@ -18,7 +18,7 @@ import math
 from collections import defaultdict, Counter
 from typing import Optional, List, Dict, Tuple
 
-from feedback_collector import FeedbackCollector, FeedbackSignal
+from learning.feedback import FeedbackCollector, FeedbackSignal
 
 from core.logger import get_logger
 logger = get_logger("experience_learner")

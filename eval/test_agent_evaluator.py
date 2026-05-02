@@ -32,7 +32,7 @@ class TestTextSimilarity:
 
     def test_tokenize_english(self):
         """英文分词应返回小写单词列表"""
-        from agent_evaluator import TextSimilarity
+        from eval.agent_evaluator import TextSimilarity
         tokens = TextSimilarity.tokenize("Hello World Python")
         assert "hello" in tokens
         assert "world" in tokens
@@ -40,7 +40,7 @@ class TestTextSimilarity:
 
     def test_tokenize_chinese_bigram(self):
         """中文应生成 bigram"""
-        from agent_evaluator import TextSimilarity
+        from eval.agent_evaluator import TextSimilarity
         tokens = TextSimilarity.tokenize("数字孪生")
         assert "数字" in tokens
         assert "字孪" in tokens
@@ -48,7 +48,7 @@ class TestTextSimilarity:
 
     def test_tokenize_mixed(self):
         """中英混合分词"""
-        from agent_evaluator import TextSimilarity
+        from eval.agent_evaluator import TextSimilarity
         tokens = TextSimilarity.tokenize("AgentClaw是Python框架")
         # \w+ 会把中英混在一起匹配, 所以至少有英文 token
         assert any("agent" in t or "python" in t for t in tokens)
@@ -56,7 +56,7 @@ class TestTextSimilarity:
 
     def test_tokenize_single_chinese_char(self):
         """中文 bigram 生成"""
-        from agent_evaluator import TextSimilarity
+        from eval.agent_evaluator import TextSimilarity
         tokens = TextSimilarity.tokenize("你好A")
         # 两个汉字至少生成一个 bigram
         assert "你好" in tokens
@@ -65,20 +65,20 @@ class TestTextSimilarity:
 
     def test_jaccard_identical(self):
         """相同文本 Jaccard = 1.0"""
-        from agent_evaluator import TextSimilarity
+        from eval.agent_evaluator import TextSimilarity
         t = TextSimilarity.tokenize("hello world")
         assert TextSimilarity.jaccard(t, t) == 1.0
 
     def test_jaccard_disjoint(self):
         """完全不同文本 Jaccard = 0.0"""
-        from agent_evaluator import TextSimilarity
+        from eval.agent_evaluator import TextSimilarity
         a = TextSimilarity.tokenize("hello world")
         b = TextSimilarity.tokenize("foo bar baz")
         assert TextSimilarity.jaccard(a, b) == 0.0
 
     def test_jaccard_partial(self):
         """部分重叠"""
-        from agent_evaluator import TextSimilarity
+        from eval.agent_evaluator import TextSimilarity
         a = TextSimilarity.tokenize("hello world python")
         b = TextSimilarity.tokenize("hello world java")
         score = TextSimilarity.jaccard(a, b)
@@ -86,49 +86,49 @@ class TestTextSimilarity:
 
     def test_jaccard_empty(self):
         """空文本 Jaccard = 0.0"""
-        from agent_evaluator import TextSimilarity
+        from eval.agent_evaluator import TextSimilarity
         assert TextSimilarity.jaccard([], ["hello"]) == 0.0
         assert TextSimilarity.jaccard([], []) == 0.0
 
     def test_overlap_identical(self):
         """相同文本重叠系数 = 1.0"""
-        from agent_evaluator import TextSimilarity
+        from eval.agent_evaluator import TextSimilarity
         t = TextSimilarity.tokenize("hello world test")
         assert TextSimilarity.overlap_coefficient(t, t) == 1.0
 
     def test_overlap_subset(self):
         """子集重叠系数 = 1.0"""
-        from agent_evaluator import TextSimilarity
+        from eval.agent_evaluator import TextSimilarity
         a = TextSimilarity.tokenize("hello world")
         b = TextSimilarity.tokenize("hello world test extra")
         assert TextSimilarity.overlap_coefficient(a, b) == 1.0
 
     def test_bm25_positive(self):
         """BM25 评分应为正数"""
-        from agent_evaluator import TextSimilarity
+        from eval.agent_evaluator import TextSimilarity
         q = TextSimilarity.tokenize("python agent framework")
         d = TextSimilarity.tokenize("python agent framework is great")
         assert TextSimilarity.bm25_score(q, d) > 0
 
     def test_bm25_empty(self):
         """空文本 BM25 = 0.0"""
-        from agent_evaluator import TextSimilarity
+        from eval.agent_evaluator import TextSimilarity
         assert TextSimilarity.bm25_score([], ["hello"]) == 0.0
         assert TextSimilarity.bm25_score(["hello"], []) == 0.0
 
     def test_keyword_overlap_full(self):
         """关键词完全覆盖 = 1.0"""
-        from agent_evaluator import TextSimilarity
+        from eval.agent_evaluator import TextSimilarity
         assert TextSimilarity.keyword_overlap("hello world test", "hello world test") == 1.0
 
     def test_keyword_overlap_empty_ref(self):
         """空参考文本 = 0.0"""
-        from agent_evaluator import TextSimilarity
+        from eval.agent_evaluator import TextSimilarity
         assert TextSimilarity.keyword_overlap("hello", "") == 0.0
 
     def test_keyword_overlap_partial(self):
         """部分关键词覆盖"""
-        from agent_evaluator import TextSimilarity
+        from eval.agent_evaluator import TextSimilarity
         score = TextSimilarity.keyword_overlap("hello world", "hello world test extra")
         assert 0.0 < score < 1.0
 
@@ -141,7 +141,7 @@ class TestRAGEvaluation:
     """RAG 评估测试"""
 
     def _make_evaluator(self):
-        from agent_evaluator import AgentEvaluator
+        from eval.agent_evaluator import AgentEvaluator
         return AgentEvaluator(mode="fast", persist_dir=tempfile.mkdtemp())
 
     def test_rag_empty(self):
@@ -215,7 +215,7 @@ class TestToolEvaluation:
     """工具选择评估测试"""
 
     def _make_evaluator(self):
-        from agent_evaluator import AgentEvaluator
+        from eval.agent_evaluator import AgentEvaluator
         return AgentEvaluator(mode="fast", persist_dir=tempfile.mkdtemp())
 
     def test_tool_empty(self):
@@ -274,23 +274,23 @@ class TestLatencyEvaluation:
     """延迟评估测试"""
 
     def _make_evaluator(self):
-        from agent_evaluator import AgentEvaluator
+        from eval.agent_evaluator import AgentEvaluator
         return AgentEvaluator(mode="fast", persist_dir=tempfile.mkdtemp())
 
     def test_percentile_basic(self):
         """百分位数计算正确"""
-        from agent_evaluator import AgentEvaluator
+        from eval.agent_evaluator import AgentEvaluator
         assert AgentEvaluator._percentile([1, 2, 3, 4, 5], 0.5) == 3.0
         assert AgentEvaluator._percentile([10, 20, 30], 0.50) == 20.0
 
     def test_percentile_empty(self):
         """空列表百分位数 = 0.0"""
-        from agent_evaluator import AgentEvaluator
+        from eval.agent_evaluator import AgentEvaluator
         assert AgentEvaluator._percentile([], 0.95) == 0.0
 
     def test_percentile_single(self):
         """单元素百分位数 = 该值"""
-        from agent_evaluator import AgentEvaluator
+        from eval.agent_evaluator import AgentEvaluator
         assert AgentEvaluator._percentile([42.0], 0.99) == 42.0
 
     def test_latency_metrics(self):
@@ -335,7 +335,7 @@ class TestEvaluatorIntegration:
 
     def test_mixed_samples(self):
         """混合样本应全部正确评估"""
-        from agent_evaluator import AgentEvaluator
+        from eval.agent_evaluator import AgentEvaluator
         ev = AgentEvaluator(mode="fast", persist_dir=tempfile.mkdtemp())
 
         ev.add_rag_sample("q?", ["ctx"], "ans", "gt")
@@ -350,7 +350,7 @@ class TestEvaluatorIntegration:
 
     def test_report_serialization(self):
         """报告应能正确序列化为 JSON"""
-        from agent_evaluator import AgentEvaluator, asdict
+        from eval.agent_evaluator import AgentEvaluator, asdict
         ev = AgentEvaluator(mode="fast", persist_dir=tempfile.mkdtemp())
         ev.add_rag_sample("q?", ["ctx"], "ans", "gt")
         report = ev.evaluate()
@@ -362,7 +362,7 @@ class TestEvaluatorIntegration:
 
     def test_print_report_no_crash(self):
         """print_report 不应崩溃"""
-        from agent_evaluator import AgentEvaluator
+        from eval.agent_evaluator import AgentEvaluator
         ev = AgentEvaluator(mode="fast", persist_dir=tempfile.mkdtemp())
         ev.add_rag_sample("q?", ["ctx"], "ans", "gt")
         report = ev.evaluate()
@@ -370,7 +370,7 @@ class TestEvaluatorIntegration:
 
     def test_load_from_feedback(self):
         """从 FeedbackCollector 加载"""
-        from agent_evaluator import AgentEvaluator
+        from eval.agent_evaluator import AgentEvaluator
         from dataclasses import dataclass
 
         ev = AgentEvaluator(mode="fast", persist_dir=tempfile.mkdtemp())
@@ -396,7 +396,7 @@ class TestEvaluatorIntegration:
 
     def test_save_report_creates_file(self):
         """评估报告应保存为文件"""
-        from agent_evaluator import AgentEvaluator
+        from eval.agent_evaluator import AgentEvaluator
         tmpdir = tempfile.mkdtemp()
         ev = AgentEvaluator(mode="fast", persist_dir=tmpdir)
         ev.add_rag_sample("q?", ["ctx"], "ans")
@@ -408,7 +408,7 @@ class TestEvaluatorIntegration:
 
     def test_agent_success_rate(self):
         """任务成功率应正确计算"""
-        from agent_evaluator import AgentEvaluator
+        from eval.agent_evaluator import AgentEvaluator
         ev = AgentEvaluator(mode="fast", persist_dir=tempfile.mkdtemp())
         for _ in range(8):
             ev.add_latency_sample("q", 1.0, 1, True)
@@ -419,7 +419,7 @@ class TestEvaluatorIntegration:
 
     def test_avg_reasoning_steps(self):
         """平均推理步数应正确计算"""
-        from agent_evaluator import AgentEvaluator
+        from eval.agent_evaluator import AgentEvaluator
         ev = AgentEvaluator(mode="fast", persist_dir=tempfile.mkdtemp())
         ev.add_latency_sample("q1", 1.0, 3, True)
         ev.add_latency_sample("q2", 2.0, 1, True)

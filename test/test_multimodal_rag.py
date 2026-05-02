@@ -48,7 +48,7 @@ def mock_vision_tool():
         MultiModalVisionTool.__init__ 中 self.api_key = api_key or OPENAI_API_KEY
         将 OPENAI_API_KEY 置空后，传入 api_key="" → "" or "" = "" → is_configured=False
     """
-    import vision_tool
+    import tools.vision as vision_tool
 
     # 保存并强制清空模块级 API key（最稳健，无视 settings/.env/load_dotenv）
     original_api_key = getattr(vision_tool, 'OPENAI_API_KEY', '')
@@ -164,7 +164,7 @@ class TestVisionToolMock:
 
     def test_vision_result_dataclass(self):
         """VisionResult 应正确初始化（需要 raw_response 参数）"""
-        from vision_tool import VisionResult, DetectionObject
+        from tools.vision import VisionResult, DetectionObject
         obj = DetectionObject(label="cat", confidence=0.95)
         result = VisionResult(
             description="test",
@@ -180,7 +180,7 @@ class TestVisionToolMock:
 
     def test_detection_object_field_types(self):
         """DetectionObject 字段类型验证"""
-        from vision_tool import DetectionObject
+        from tools.vision import DetectionObject
         obj = DetectionObject(label="dog", confidence=0.87, bbox={"x": 10, "y": 20, "w": 100, "h": 200})
         assert isinstance(obj.label, str)
         assert isinstance(obj.confidence, float)
@@ -189,8 +189,8 @@ class TestVisionToolMock:
     def test_with_api_key_configured(self):
         """有 API key 时 is_configured 应为 True"""
         try:
-            import vision_tool
-            from vision_tool import MultiModalVisionTool
+            import tools.vision
+            from tools.vision import MultiModalVisionTool
             # 显式传 api_key，不走模块变量
             tool = MultiModalVisionTool(api_key="sk-fake-key-for-test")
             assert tool.is_configured is True
@@ -217,7 +217,7 @@ class TestImageGeneration:
     def test_allowed_sizes_count(self):
         """应定义 7 种允许的尺寸"""
         try:
-            from multimodal_image_gen import ALLOWED_SIZES
+            from tools.image_gen import ALLOWED_SIZES
             assert len(ALLOWED_SIZES) == 7
         except ImportError:
             pytest.skip("multimodal_image_gen not available")
@@ -225,7 +225,7 @@ class TestImageGeneration:
     def test_allowed_sizes_exact_match(self):
         """允许的尺寸应与预期白名单完全匹配"""
         try:
-            from multimodal_image_gen import ALLOWED_SIZES
+            from tools.image_gen import ALLOWED_SIZES
             assert set(ALLOWED_SIZES) == EXPECTED_SIZES
         except ImportError:
             pytest.skip("multimodal_image_gen not available")
@@ -233,7 +233,7 @@ class TestImageGeneration:
     def test_prompt_safety_audit(self):
         """危险提示词应被安全审计拦截"""
         try:
-            from multimodal_image_gen import is_prompt_safe
+            from tools.image_gen import is_prompt_safe
             assert is_prompt_safe("A beautiful sunset over mountains") is True
             assert is_prompt_safe("violent gore blood") is False
             assert is_prompt_safe("nsfw content") is False
@@ -243,7 +243,7 @@ class TestImageGeneration:
     def test_prompt_safety_normal_inputs(self):
         """正常提示词应全部通过"""
         try:
-            from multimodal_image_gen import is_prompt_safe
+            from tools.image_gen import is_prompt_safe
             safe_prompts = [
                 "a cat sitting on a sofa",
                 "futuristic city skyline",
@@ -258,7 +258,7 @@ class TestImageGeneration:
     def test_size_validation_rejects_invalid(self):
         """无效尺寸不应在白名单中"""
         try:
-            from multimodal_image_gen import ALLOWED_SIZES
+            from tools.image_gen import ALLOWED_SIZES
             invalid = ["9999x9999", "500x500", "100x100", "0x0", "1024x1023"]
             for size in invalid:
                 assert size not in ALLOWED_SIZES
@@ -276,7 +276,7 @@ class TestRAGSearcher:
     def test_document_loader_txt(self, tmp_path, sample_text_content):
         """DocumentLoader 应正确加载 TXT 文件"""
         try:
-            from rag_searcher import DocumentLoader
+            from tools.searcher import DocumentLoader
             f = tmp_path / "test.txt"
             f.write_text(sample_text_content, encoding="utf-8")
             loader = DocumentLoader()
@@ -291,7 +291,7 @@ class TestRAGSearcher:
     def test_text_splitter(self, sample_text_content):
         """TextSplitter 应将文本分成合理的块"""
         try:
-            from rag_searcher import TextSplitter
+            from tools.searcher import TextSplitter
             splitter = TextSplitter(chunk_size=100, overlap=20)
             chunks = splitter.split(sample_text_content)
             assert len(chunks) >= 2
@@ -305,7 +305,7 @@ class TestRAGSearcher:
     def test_text_splitter_long_content(self, sample_long_text):
         """TextSplitter 应正确处理长文本分块"""
         try:
-            from rag_searcher import TextSplitter
+            from tools.searcher import TextSplitter
             splitter = TextSplitter(chunk_size=200, overlap=50)
             chunks = splitter.split(sample_long_text)
             assert len(chunks) >= 3
@@ -320,7 +320,7 @@ class TestRAGSearcher:
     def test_vector_store_search(self, sample_text_content):
         """InMemoryVectorStore 应能搜索相似内容"""
         try:
-            from rag_searcher import RAGEngine
+            from tools.searcher import RAGEngine
             engine = RAGEngine()
             engine.add_document("test_doc", sample_text_content)
             results = engine.search("什么是 AgentClaw", top_k=3)
@@ -334,7 +334,7 @@ class TestRAGSearcher:
     def test_empty_query_handling(self, sample_text_content):
         """空查询应返回空结果或报错而非崩溃"""
         try:
-            from rag_searcher import RAGEngine
+            from tools.searcher import RAGEngine
             engine = RAGEngine()
             engine.add_document("test_doc", sample_text_content)
             results = engine.search("", top_k=3)
@@ -345,7 +345,7 @@ class TestRAGSearcher:
     def test_duplicate_document_handling(self, sample_text_content):
         """添加重复文档不应导致崩溃或数据异常"""
         try:
-            from rag_searcher import RAGEngine
+            from tools.searcher import RAGEngine
             engine = RAGEngine()
             engine.add_document("doc1", sample_text_content)
             engine.add_document("doc2", sample_text_content)
@@ -358,7 +358,7 @@ class TestRAGSearcher:
     def test_search_top_k_limit(self, sample_text_content):
         """搜索结果数量不应超过 top_k"""
         try:
-            from rag_searcher import RAGEngine
+            from tools.searcher import RAGEngine
             engine = RAGEngine()
             engine.add_document("doc1", "Python is a programming language.")
             engine.add_document("doc2", "Java is a programming language.")
@@ -379,10 +379,10 @@ class TestBuiltinTools:
     def test_calculator_safe(self):
         """计算器应接受安全表达式"""
         try:
-            from tool_registry import ToolRegistry
+            from tools.registry import ToolRegistry
             ToolRegistry._instance = None
-            import builtin_tools  # noqa: F401
-            from tool_registry import registry
+            import tools.builtin  # noqa: F401
+            from tools.registry import registry
             result = registry.execute("calculator", expression="2+3*4")
             assert result["success"] is True
             assert result["result"]["result"] == 14
@@ -392,10 +392,10 @@ class TestBuiltinTools:
     def test_calculator_blocks_eval(self):
         """计算器应阻止 eval 注入"""
         try:
-            from tool_registry import ToolRegistry
+            from tools.registry import ToolRegistry
             ToolRegistry._instance = None
-            import builtin_tools  # noqa: F401
-            from tool_registry import registry
+            import tools.builtin  # noqa: F401
+            from tools.registry import registry
             result = registry.execute("calculator", expression="__import__('os').system('echo pwned')")
             # calculator 返回 success=True 但 result 里包含 error 字段
             if result["success"]:

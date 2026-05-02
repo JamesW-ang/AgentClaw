@@ -30,7 +30,7 @@ from core.logger import get_logger
 
 logger = get_logger("ImageGen")
 
-from tool_registry import registry
+from tools.registry import registry
 
 # ============================================================
 # 安全与配置常量

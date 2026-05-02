@@ -2,7 +2,7 @@
 import time
 import uuid
 import traceback
-from tool_registry import ToolInfo, ToolParameter, registry
+from tools.registry import ToolInfo, ToolParameter, registry
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field, create_model
 import inspect
@@ -115,7 +115,7 @@ class RegistryAdapter:
                         # 收集反馈信号（如果 collector 已注入）
                         if _collector is not None:
                             try:
-                                from feedback_collector import FeedbackSignal
+                                from learning.feedback import FeedbackSignal
                                 signal = FeedbackSignal(
                                     task_id=task_id,
                                     tool_name=tool_name,

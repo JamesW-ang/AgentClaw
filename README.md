@@ -65,56 +65,56 @@ AgentClaw v6.1 是一个生产级 AI Agent 框架，核心特性包括：
 ## 2. 六层架构
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ Level 6: 监控层 (health.py)                                  │
-│ ├─ 依赖: Level 1 (logger/config)                            │
-│ └─ 被依赖: api_server (GET /health*)                        │
-├─────────────────────────────────────────────────────────────┤
-│ Level 5: 服务层 (api_server.py, demo_ui.py)                  │
-│ ├─ 依赖: Level 4 (agent_core) + aoi_workflow + 多Agent     │
-│ ├─ demo_ui 8个Tab:                                           │
-│ │   Tab1 检测分析 / Tab2 对话助手 / Tab3 RAG知识库           │
+┌──────────────────────────────────────────────────────────────┐
+│ Level 6: 监控层 (tools/health.py)                            │
+│ ├─ 依赖: Level 1 (logger/config)                             │
+│ └─ 被依赖: api.server (GET /health*)                         │
+├──────────────────────────────────────────────────────────────┤
+│ Level 5: 服务层 (api/server.py, demo/ui.py)                  │
+│ ├─ 依赖: Level 4 (agent.core) + aoi.workflow + 多Agent      │
+│ ├─ demo.ui 8个Tab:                                           │
+│ │   Tab1 检测分析 / Tab2 对话助手 / Tab3 RAG知识库            │
 │ │   Tab4 多模态视觉 / Tab5 图片生成 / Tab6 多Agent协作        │
-│ │   Tab7 AOI独立检测 / Tab8 AOI智能闭环                      │
-│ └─ 被依赖: 用户 (HTTP/Gradio)                               │
-├─────────────────────────────────────────────────────────────┤
-│ Level 4: 编排层                                              │
-│ ├─ agent_core.py (ReAct Agent)                               │
-│ │   ├─ 依赖: Level 2 (registry_adapter) + Level 1          │
+│ │   Tab7 AOI独立检测 / Tab8 AOI智能闭环                       │
+│ └─ 被依赖: 用户 (HTTP/Gradio)                                │
+├──────────────────────────────────────────────────────────────┤
+│ Level 4: 编排层                                               │
+│ ├─ agent/core.py (ReAct Agent)                               │
+│ │   ├─ 依赖: Level 2 (tools.registry_adapter) + Level 1     │
 │ │   ├─ 调用: LangGraph create_react_agent()                  │
-│ │   └─ 被依赖: Level 5 (api_server/demo_ui Tab2)           │
-│ ├─ aoi_workflow.py (AOI智能闭环)                             │
-│ │   ├─ 4个Agent: 缺陷识别→案例检索→参数推理→XML改写        │
-│ │   ├─ 调用: registry.execute() 统一调度工具                │
-│ │   ├─ 条件分支: 检测结果→推理→改写→复检 (≤3次重试)        │
-│ │   └─ 被依赖: Level 5 (demo_ui Tab8)                      │
-│ └─ 多Agent协作 (demo_ui内 LangGraph StateGraph)              │
-│     ├─ 3场景: code_review/tech_design/problem_diagnosis      │
+│ │   └─ 被依赖: Level 5 (api.server/demo.ui Tab2)            │
+│ ├─ aoi/workflow.py (AOI智能闭环)                             │
+│ │   ├─ 4个Agent: 缺陷识别→案例检索→参数推理→XML改写         │
+│ │   ├─ 调用: registry.execute() 统一调度工具                 │
+│ │   ├─ 条件分支: 检测结果→推理→改写→复检 (≤3次重试)         │
+│ │   └─ 被依赖: Level 5 (demo.ui Tab8)                       │
+│ └─ 多Agent协作 (demo.ui内 LangGraph StateGraph)              │
+│     ├─ 3场景: code_review/tech_design/problem_diagnosis       │
 │     ├─ 每场景3角色, 各角色通过 _registry_tool_wrapper         │
-│     │   桥接 registry (StructuredTool + Pydantic Schema)     │
-│     ├─ 工具映射: agent_xxx → registry.execute(xxx)          │
-│     └─ 被依赖: Level 5 (demo_ui Tab6)                        │
-├─────────────────────────────────────────────────────────────┤
-│ Level 3: 安全与可靠性层                                       │
-│ ├─ security.py (中间件)                                      │
-│ │   ├─ 依赖: core/rate_limiter                              │
-│ │   └─ 被依赖: FastAPI (middleware stack)                    │
-│ ├─ core/retry.py (装饰器)                                    │
-│ │   ├─ 依赖: core/logger                                    │
-│ │   └─ 被依赖: vision_tool (自动重试)                        │
-│ └─ core/rate_limiter.py (限流)                               │
-│     ├─ 依赖: threading                                       │
-│     └─ 被依赖: security + tool_registry                      │
-├─────────────────────────────────────────────────────────────┤
-│ Level 2: 工具层 (tool_registry.py, registry_adapter.py)       │
-│ ├─ tool_registry.py (单例注册中心, 24个工具)                 │
-│ │   ├─ 被注册: builtin_tools + vision_tool + ...             │
-│ │   ├─ registry.execute(name, args) → {success, result}     │
-│ │   └─ 被依赖: 所有编排层模块统一入口                        │
-│ └─ registry_adapter.py                                       │
-│     ├─ ToolInfo → StructuredTool + Pydantic Schema           │
-│     ├─ 调用: feedback_collector (反馈采集)                    │
-│     └─ 被依赖: agent_core (get_react_tools)                  │
+│     │   桥接 registry (StructuredTool + Pydantic Schema)      │
+│     ├─ 工具映射: agent_xxx → registry.execute(xxx)           │
+│     └─ 被依赖: Level 5 (demo.ui Tab6)                        │
+├──────────────────────────────────────────────────────────────┤
+│ Level 3: 安全与可靠性层                                        │
+│ ├─ tools/security.py (中间件)                                 │
+│ │   ├─ 依赖: core/rate_limiter                               │
+│ │   └─ 被依赖: FastAPI (middleware stack)                     │
+│ ├─ core/retry.py (装饰器)                                     │
+│ │   ├─ 依赖: core/logger                                     │
+│ │   └─ 被依赖: tools.vision (自动重试)                        │
+│ └─ core/rate_limiter.py (限流)                                │
+│     ├─ 依赖: threading                                        │
+│     └─ 被依赖: tools.security + tools.registry                │
+├──────────────────────────────────────────────────────────────┤
+│ Level 2: 工具层 (tools/registry.py, tools/registry_adapter.py)│
+│ ├─ tools/registry.py (单例注册中心, 24个工具)                 │
+│ │   ├─ 被注册: tools.builtin + tools.vision + ...            │
+│ │   ├─ registry.execute(name, args) → {success, result}      │
+│ │   └─ 被依赖: 所有编排层模块统一入口                         │
+│ └─ tools/registry_adapter.py                                  │
+│     ├─ ToolInfo → StructuredTool + Pydantic Schema            │
+│     ├─ 调用: learning.feedback (反馈采集)                     │
+│     └─ 被依赖: agent.core (get_react_tools)                   │
 ├─────────────────────────────────────────────────────────────┤
 │ Level 1: 基础层 (core/)                                      │
 │ ├─ config.py (配置验证器 + load_dotenv)                      │
@@ -132,10 +132,10 @@ FeedbackCollector → ExperienceLearner → AdaptiveOptimizer → EvolutionManag
 
 **数据流核心: 所有工具调用汇聚 registry，3条路线统一调度**
 ```
-绿线: 用户→agent_core→registry_adapter→registry→工具
-蓝线: 用户→aoi_workflow→registry.execute→registry→工具
-橙线: 用户→多Agent→_registry_tool_wrapper→registry.execute→registry→工具
-紫线: 用户→vision/image→registry.execute→registry→工具
+绿线: 用户→agent.core→tools.registry_adapter→tools.registry→工具
+蓝线: 用户→aoi.workflow→registry.execute→tools.registry→工具
+橙线: 用户→多Agent→_registry_tool_wrapper→registry.execute→tools.registry→工具
+紫线: 用户→vision/image→registry.execute→tools.registry→工具
 ```
 
 ---
@@ -156,7 +156,7 @@ HTTP POST /ask
   │  └─ 请求体长度检查 (≤5000 字符)
   │
   ▼
-[2] api_server.ask() 路由
+[2] api.server.ask() 路由
   │  ├─ _llm_limiter.consume() — LLM 专用限流 (rate=1.0/s, capacity=5)
   │  ├─ get_react_agent() — 懒加载单例
   │  │    ├─ init_all_tools() — 触发工具注册 (18个)
@@ -190,7 +190,7 @@ HTTP POST /ask
 
 ## 4. 工具清单（22个）
 
-### 核心工具（builtin_tools.py — 14个）
+### 核心工具（tools/builtin.py — 14个）
 
 | # | 工具名 | 分类 | 说明 | 安全机制 |
 |---|--------|------|------|---------|
@@ -211,7 +211,7 @@ HTTP POST /ask
 | 15 | `browser_get_content` | system | 提取页面文本内容 | 可选依赖 |
 | 16 | `browser_screenshot` | system | 页面截图 | 可选依赖 |
 
-### 多模态工具（vision_tool.py — 3个）
+### 多模态工具（tools/vision.py — 3个）
 
 | # | 工具名 | 说明 | 特性 |
 |---|--------|------|------|
@@ -219,19 +219,19 @@ HTTP POST /ask
 | 18 | `vision_ocr` | OCR 文字识别 | 多语言支持 |
 | 19 | `vision_compare` | 多图对比分析 | 支持批量对比 |
 
-### 图片生成（multimodal_image_gen.py — 1个）
+### 图片生成（tools/image_gen.py — 1个）
 
 | # | 工具名 | 说明 | 特性 |
 |---|--------|------|------|
 | 20 | `image_generate` | AI 文生图 | CogView-3-Flash，7种尺寸，内容安全审计 |
 
-### AOI 检测工具（aoi_engine.py — 1个）
+### AOI 检测工具（aoi/engine.py — 1个）
 
 | # | 工具名 | 说明 | 特性 |
 |---|--------|------|------|
 | 21 | `aoi_detect` | AOI 电路板缺陷检测 | 支持多种缺陷类型识别 |
 
-### XML 配置工具（xml_config_tool.py — 3个）
+### XML 配置工具（tools/xml_config.py — 3个）
 
 | # | 工具名 | 说明 | 特性 |
 |---|--------|------|------|
@@ -245,7 +245,7 @@ HTTP POST /ask
 
 ## 5. 核心模块说明
 
-### 5.1 agent_core.py — 统一入口
+### 5.1 agent/core.py — 统一入口
 
 项目的"枢纽模块"，解决各子系统孤立的问题。提供：
 
@@ -258,7 +258,7 @@ HTTP POST /ask
 
 ```python
 # 使用方式
-from agent_core import get_react_agent
+from agent.core import get_react_agent
 agent = get_react_agent()
 result = agent.invoke(
     {"messages": [("human", "帮我搜索Python最新版本")]},
@@ -266,7 +266,7 @@ result = agent.invoke(
 )
 ```
 
-### 5.2 tool_registry.py — 工具注册中心
+### 5.2 tools/registry.py — 工具注册中心
 
 生产级单例注册中心，核心特性：
 
@@ -291,7 +291,7 @@ def my_tool(query: str) -> dict:
 result = registry.execute("my_tool", query="hello")
 ```
 
-### 5.3 registry_adapter.py — LangGraph 桥接
+### 5.3 tools/registry_adapter.py — LangGraph 桥接
 
 将 ToolRegistry 中的工具转换为 LangGraph 的 `StructuredTool`，同时：
 
@@ -332,7 +332,7 @@ validate_on_startup()          # 缺失则 sys.exit(1)
 
 ### 5.6 core/retry.py — 重试机制
 
-已集成到 `vision_tool._call_vision_api()`：
+已集成到 `tools.vision._call_vision_api()`：
 
 - **指数退避**：`delay = initial_delay × backoff_factor^attempt`
 - **抖动**：`delay × random(0.75, 1.25)`
@@ -345,13 +345,13 @@ validate_on_startup()          # 缺失则 sys.exit(1)
 
 | 集成位置 | 限制器 | 配置 | 说明 |
 |---------|--------|------|------|
-| `security.py` (SecurityMiddleware) | `TokenBucket(rate=0.5, capacity=30)` | 每秒 0.5 请求，突发 30 | 全局 HTTP 请求限流 |
-| `api_server.py` (`/ask` 路由) | `_llm_limiter` (rate=1.0, capacity=5) | 每秒 1 请求，突发 5 | LLM 调用专用限流 |
-| `tool_registry.py` (`execute()`) | `_llm_limiter` (rate=1.0, capacity=5) | 同上 | 工具执行级限流 |
+| `tools/security.py` (SecurityMiddleware) | `TokenBucket(rate=0.5, capacity=30)` | 每秒 0.5 请求，突发 30 | 全局 HTTP 请求限流 |
+| `api/server.py` (`/ask` 路由) | `_llm_limiter` (rate=1.0, capacity=5) | 每秒 1 请求，突发 5 | LLM 调用专用限流 |
+| `tools/registry.py` (`execute()`) | `_llm_limiter` (rate=1.0, capacity=5) | 同上 | 工具执行级限流 |
 
-### 5.8 health.py — 健康检查
+### 5.8 tools/health.py — 健康检查
 
-已挂载到 `api_server.py` 两个路由：
+已挂载到 `api/server.py` 两个路由：
 
 - `GET /health` — 基础检查（版本、运行时间、内存）
 - `GET /health/detailed` — 详细检查（ChromaDB 心跳 + LLM API HEAD 请求 + 系统内存）
@@ -370,7 +370,7 @@ validate_on_startup()          # 缺失则 sys.exit(1)
 }
 ```
 
-### 5.9 security.py — 安全中间件
+### 5.9 tools/security.py — 安全中间件
 
 Starlette BaseHTTPMiddleware，五层防护：
 
@@ -388,24 +388,24 @@ Starlette BaseHTTPMiddleware，五层防护：
 
 ```
 请求入口
-  ├── SecurityMiddleware (security.py)
+  ├── SecurityMiddleware (tools/security.py)
   │    ├── 令牌桶限流 — rate=0.5/s, capacity=30
   │    ├── SQL 注入拦截 — 8 种正则模式
   │    ├── XSS 攻击拦截 — 5 种正则模式
   │    ├── 敏感信息过滤 — password/secret/api_key/token/...
   │    └── 请求体长度限制 — ≤ 5000 字符
   │
-  ├── /ask 路由 (api_server.py)
+  ├── /ask 路由 (api/server.py)
   │    └── LLM 限流 — _llm_limiter (rate=1.0/s, capacity=5)
   │
-  ├── 工具执行 (tool_registry.py)
+  ├── 工具执行 (tools/registry.py)
   │    ├── 第三层限流 — _llm_limiter
   │    ├── 文件操作白名单 + 黑名单
   │    ├── 命令执行白名单 + 危险模式检测
   │    ├── 沙箱代码执行 (AST 检查)
   │    └── 图片生成内容安全审计
   │
-  └── Vision API 调用 (vision_tool.py)
+  └── Vision API 调用 (tools/vision.py)
        └── 自动重试 3 次 (指数退避 + 抖动)
 ```
 
@@ -501,7 +501,7 @@ Request → Trace (id, meta)
 ### 7.5 三链联动初始化
 
 ```python
-from agent_core import init_chains
+from agent.core import init_chains
 
 # 初始化三链联动
 error_chain, trace_chain = init_chains()
@@ -527,11 +527,11 @@ EvolutionManager ← 协调子系统，后台定期进化（默认每小时）
 ### 集成方式
 
 - **RegistryAdapter**：每个工具调用后自动采集 FeedbackSignal
-- **agent_core.init_evolution()**：启动进化循环
-- **agent_core.record_feedback()**：手动记录反馈
+- **agent.core.init_evolution()**：启动进化循环
+- **agent.core.record_feedback()**：手动记录反馈
 
 ```python
-from agent_core import init_evolution, record_feedback
+from agent.core import init_evolution, record_feedback
 
 # 启动进化（后台线程）
 init_evolution(interval=3600)
@@ -625,10 +625,10 @@ cp AgentClaw_Docker_.env.example .env
 python main.py
 
 # 方式 2：单独启动 API
-python api_server.py
+python -m api.server
 
 # 方式 3：单独启动 Web UI
-python demo_ui.py
+python -m demo.ui
 ```
 
 ### 10.4 验证
@@ -723,60 +723,98 @@ docker-compose logs -f
 ## 13. 项目结构
 
 ```
-AgentClaw_code/
-├── main.py                    # 统一启动入口（API + Web UI）
-├── agent_core.py              # 核心：工具注册 + Agent 创建 + 进化管理
-├── api_server.py              # FastAPI 服务（/ask, /health）
-├── demo_ui.py                 # Gradio Web UI（6 大场景）
-├── react_agent.py             # ReAct Agent（兼容旧接口）
-├── builtin_tools.py           # 14 个内置工具
-├── vision_tool.py             # 3 个视觉工具（带重试）
-├── multimodal_image_gen.py    # 1 个图片生成工具
-├── tool_registry.py           # 工具注册中心（单例）
-├── registry_adapter.py        # LangGraph 桥接适配器
-├── tool_dispatcher.py         # 工具分发器
-├── security.py                # 安全中间件（TokenBucket 限流）
-├── health.py                  # 健康检查（三维检测）
-├── rag_searcher.py            # RAG 检索引擎
-├── prompts.py                 # Prompt 模板
-├── query.py                   # 查询处理
-├── feedback_collector.py      # 反馈采集器
-├── experience_learner.py      # 经验学习器
-├── adaptive_optimizer.py      # 自适应优化器
-├── evolution_manage.py        # 进化管理器
-├── load_docs.py               # 文档加载器
-├── create_vector_db.py        # 向量库创建
-├── aoi_engine.py              # AOI 检测引擎
-├── aoi_workflow.py            # AOI 工作流
-├── xml_config_tool.py         # XML 配置管理工具
-├── requirements.txt           # Python 依赖
-├── Dockerfile                 # Docker 镜像
-├── docker-compose.yml         # Docker Compose
-├── AgentClaw_Docker_.env.example  # 环境变量模板
+AgentClaw/
+├── main.py                    # 统一启动入口（代理脚本，委托 scripts/main.py）
 │
-├── core/
+├── agent/                     # Agent 核心
+│   ├── __init__.py
+│   └── core.py                # 工具注册 + Agent 创建 + 进化管理
+│
+├── api/                       # API 服务
+│   ├── __init__.py
+│   └── server.py              # FastAPI 服务（/ask, /health）
+│
+├── aoi/                       # AOI 检测模块
+│   ├── __init__.py
+│   ├── engine.py              # AOI 检测引擎
+│   └── workflow.py            # AOI 智能闭环工作流
+│
+├── core/                      # 核心框架
 │   ├── config.py              # 配置验证器（Frozen dataclass）
 │   ├── logger.py              # 彩色日志 + 文件轮转
 │   ├── retry.py               # 重试装饰器（指数退避 + 抖动）
 │   ├── rate_limiter.py        # 令牌桶限流器
 │   ├── llm_guard.py           # LLM 容错层（降级/熔断/缓存）
 │   ├── error_chain.py         # 统一错误处理链
-│   └── trace_chain.py         # 链路追踪系统
+│   ├── trace_chain.py         # 链路追踪系统
+│   └── guarded_chat_model.py  # 带防护的 LLM 封装
 │
-├── eval/
+├── demo/                      # 演示界面
+│   ├── __init__.py
+│   ├── ui.py                  # Gradio Web UI（8 大场景）
+│   └── self_learning.py       # 自主学习系统演示
+│
+├── eval/                      # 评估系统
+│   ├── __init__.py
 │   ├── agent_evaluator.py     # Agent 评估器核心
-│   ├── eval_data/             # 评估数据和报告
-│   └── test_agent_evaluator.py # 评估器单元测试
+│   ├── cases.py               # 评估测试用例
+│   ├── runner.py              # 评估运行器
+│   └── test_agent_evaluator.py
 │
-└── os_tools/
-    ├── file_write.py          # 安全文件写入
-    ├── sys_monitor.py         # 系统监控
-    ├── process_mgr.py         # 进程管理
-    ├── browser_tool.py        # 浏览器自动化（可选）
-    └── scheduler.py           # 任务调度（预留）
+├── learning/                  # 自主进化系统
+│   ├── __init__.py
+│   ├── feedback.py            # 反馈采集器
+│   ├── learner.py             # 经验学习器
+│   ├── optimizer.py           # 自适应优化器
+│   └── evolution.py           # 进化管理器
+│
+├── os_tools/                  # 操作系统工具
+│   ├── file_write.py          # 安全文件写入
+│   ├── sys_monitor.py         # 系统监控
+│   ├── process_mgr.py         # 进程管理
+│   ├── browser_tool.py        # 浏览器自动化（可选）
+│   └── scheduler.py           # 任务调度（预留）
+│
+├── scripts/                   # 入口脚本
+│   ├── __init__.py
+│   └── main.py                # 统一启动入口（实际逻辑）
+│
+├── tools/                     # Agent 工具层
+│   ├── __init__.py
+│   ├── registry.py            # 工具注册中心（单例）
+│   ├── registry_adapter.py    # LangGraph 桥接适配器
+│   ├── dispatcher.py          # 工具分发器
+│   ├── builtin.py             # 14 个内置工具
+│   ├── vision.py              # 3 个视觉工具（带重试）
+│   ├── image_gen.py           # 图片生成工具
+│   ├── searcher.py            # RAG 检索引擎
+│   ├── security.py            # 安全中间件（TokenBucket 限流）
+│   ├── health.py              # 健康检查（三维检测）
+│   ├── xml_config.py          # XML 配置管理工具
+│   ├── multimodal_router.py   # 多模态路由
+│   └── langfuse_adapter.py    # LangFuse 可观测性
+│
+├── test/                      # 单元测试
+│   ├── test_core.py
+│   ├── test_health.py
+│   ├── test_integration.py
+│   ├── test_multimodal_rag.py
+│   ├── test_rate_limiter.py
+│   └── test_react_agent.py
+│
+├── data/                      # 运行时数据
+│   ├── chroma_db/             # ChromaDB 向量库
+│   ├── logs/                  # 日志文件
+│   └── traces/                # 链路追踪数据
+│
+├── models/                    # ONNX 模型文件（YOLO 等）
+├── requirements.txt           # Python 依赖
+├── Dockerfile                 # Docker 镜像
+├── docker-compose.yml         # Docker Compose
+└── AgentClaw_Docker_.env.example  # 环境变量模板
 ```
 
-**代码统计**：约 8,300 行 Python 代码，27 个源文件。
+**代码统计**：约 8,300 行 Python 代码，50+ 个源文件，按功能分包管理。
 
 ---
 
@@ -786,7 +824,7 @@ AgentClaw_code/
 
 ```python
 # 方式 1：装饰器注册（推荐）
-from tool_registry import registry, ToolCategory
+from tools.registry import registry, ToolCategory
 
 @registry.register(
     name="my_tool",
@@ -838,16 +876,16 @@ my_limiter = TokenBucket(rate=10.0, capacity=20)
 
 ```bash
 # 工具注册中心自测
-python tool_registry.py
+python tools/registry.py
 
 # 视觉工具自测
-python vision_tool.py
+python tools/vision.py
 
 # 内置工具自测
-python builtin_tools.py
+python tools/builtin.py
 
 # 核心初始化自测
-python agent_core.py
+python agent/core.py
 ```
 
 ### 14.5 自定义配置
@@ -884,13 +922,13 @@ WEB_PORT=8081
    ├─ Input: {"question": "搜索Python最新版本", "session_id": "user-1"}
    │
    ▼
-2. HTTP 请求处理 (api_server.py)
+2. HTTP 请求处理 (api/server.py)
    │
    ├─ Route: POST /ask
    ├─ Query Params: ?stream=true (可选)
    │
    ▼
-3. 安全层防护 (security.py)
+3. 安全层防护 (tools/security.py)
    │
    ├─ TokenBucket.consume(1) — 全局限流
    ├─ SQL 注入正则检测 (8 patterns)
@@ -902,18 +940,18 @@ WEB_PORT=8081
    └─ ✗ 失败 → 返回 400/413/429 错误
    │
    ▼
-4. 工具初始化 (agent_core.py)
+4. 工具初始化 (agent/core.py)
    │
    ├─ get_react_agent() — 获取或创建 Agent 单例
    ├─ init_all_tools() — 注册全部 18 个工具
-   │  ├─ builtin_tools — 14 个工具
-   │  ├─ vision_tool — 3 个工具
-   │  ├─ multimodal_image_gen — 1 个工具
-   │  └─ aoi_engine — 1 个工具（可选）
+   │  ├─ tools.builtin — 14 个工具
+   │  ├─ tools.vision — 3 个工具
+   │  ├─ tools.image_gen — 1 个工具
+   │  └─ aoi.engine — 1 个工具（可选）
    ├─ get_react_tools() — 获取 LangGraph StructuredTool 列表
    │
    ▼
-5. Agent 推理循环 (agent_core.py + LangGraph)
+5. Agent 推理循环 (agent/core.py + LangGraph)
    │
    ├─ 循环最多 5 轮 (REACT_MAX_ROUNDS)
    │  │
@@ -929,7 +967,7 @@ WEB_PORT=8081
    │  │  │  ├─ Action: "web_search"
    │  │  │  └─ Action Input: {"query": "..."}
    │  │  │
-   │  │  ├─ 工具执行 (tool_registry.execute())
+   │  │  ├─ 工具执行 (tools.registry.execute())
    │  │  │  ├─ 工具选择验证 (工具名称有效性)
    │  │  │  ├─ 参数验证 (Pydantic schema)
    │  │  │  ├─ 限流检查 (_llm_limiter.consume())
@@ -968,7 +1006,7 @@ WEB_PORT=8081
    ├─ 循环结束
    │
    ▼
-6. 响应组装 (api_server.py)
+6. 响应组装 (api/server.py)
    │
    ├─ 提取最终答案
    ├─ 计算执行统计
@@ -1092,40 +1130,40 @@ FeedbackCollector.collect()
 ### 15.3 层级依赖关系
 
 ```
-┌─────────────────────────────────────────────────────┐
-│ Level 6: 监控层 (health.py)                          │
-│ ├─ 依赖: Level 1 (logger/config)                     │
-│ └─ 被依赖: api_server (GET /health*)                │
-├─────────────────────────────────────────────────────┤
-│ Level 5: 服务层 (api_server.py, demo_ui.py)         │
-│ ├─ 依赖: Level 4 (agent_core) + Level 3 (security)  │
-│ └─ 被依赖: 用户 (HTTP/WebSocket)                    │
-├─────────────────────────────────────────────────────┤
-│ Level 4: 编排层 (agent_core.py)                      │
-│ ├─ 依赖: Level 2 (registry_adapter) + Level 1       │
-│ ├─ 调用: LangGraph create_react_agent()             │
-│ └─ 被依赖: Level 5 (api_server/demo_ui)             │
-├─────────────────────────────────────────────────────┤
-│ Level 3: 安全与可靠性层                              │
-│ ├─ security.py (中间件)                            │
-│ │  ├─ 依赖: core/rate_limiter                       │
-│ │  └─ 被依赖: FastAPI (middleware stack)            │
-│ ├─ core/retry.py (装饰器)                           │
-│ │  ├─ 依赖: core/logger                             │
-│ │  └─ 被依赖: vision_tool (自动重试)                │
-│ └─ core/rate_limiter.py (限流)                      │
-│    ├─ 依赖: threading                               │
-│    └─ 被依赖: security + tool_registry               │
-├─────────────────────────────────────────────────────┤
-│ Level 2: 工具层 (tool_registry.py, registry_adapter) │
-│ ├─ tool_registry.py (单例注册中心)                  │
-│ │  ├─ 被注册: builtin_tools + vision_tool + ...    │
+┌──────────────────────────────────────────────────────────┐
+│ Level 6: 监控层 (tools/health.py)                        │
+│ ├─ 依赖: Level 1 (logger/config)                         │
+│ └─ 被依赖: api.server (GET /health*)                     │
+├──────────────────────────────────────────────────────────┤
+│ Level 5: 服务层 (api/server.py, demo/ui.py)              │
+│ ├─ 依赖: Level 4 (agent.core) + Level 3 (tools.security) │
+│ └─ 被依赖: 用户 (HTTP/WebSocket)                         │
+├──────────────────────────────────────────────────────────┤
+│ Level 4: 编排层 (agent/core.py)                           │
+│ ├─ 依赖: Level 2 (tools.registry_adapter) + Level 1      │
+│ ├─ 调用: LangGraph create_react_agent()                  │
+│ └─ 被依赖: Level 5 (api.server/demo.ui)                  │
+├──────────────────────────────────────────────────────────┤
+│ Level 3: 安全与可靠性层                                   │
+│ ├─ tools/security.py (中间件)                             │
+│ │  ├─ 依赖: core/rate_limiter                            │
+│ │  └─ 被依赖: FastAPI (middleware stack)                 │
+│ ├─ core/retry.py (装饰器)                                │
+│ │  ├─ 依赖: core/logger                                  │
+│ │  └─ 被依赖: tools.vision (自动重试)                     │
+│ └─ core/rate_limiter.py (限流)                            │
+│    ├─ 依赖: threading                                     │
+│    └─ 被依赖: tools.security + tools.registry              │
+├──────────────────────────────────────────────────────────┤
+│ Level 2: 工具层 (tools/registry.py, tools/registry_adapter) │
+│ ├─ tools/registry.py (单例注册中心)                       │
+│ │  ├─ 被注册: tools.builtin + tools.vision + ...    │
 │ │  ├─ 依赖: core/logger + core/rate_limiter         │
-│ │  └─ 被依赖: registry_adapter + 各工具模块         │
-│ └─ registry_adapter.py                              │
-│    ├─ 依赖: tool_registry + LangGraph               │
-│    ├─ 调用: 反馈采集 (feedback_collector)           │
-│    └─ 被依赖: agent_core (get_react_tools)          │
+│ │  └─ 被依赖: tools.registry_adapter + 各工具模块   │
+│ └─ tools/registry_adapter.py                              │
+│    ├─ 依赖: tools.registry + LangGraph               │
+│    ├─ 调用: 反馈采集 (learning.feedback)            │
+│    └─ 被依赖: agent.core (get_react_tools)          │
 ├─────────────────────────────────────────────────────┤
 │ Level 1: 基础层 (core/)                              │
 │ ├─ config.py (配置验证器)                           │
@@ -1136,15 +1174,15 @@ FeedbackCollector.collect()
 │ │  └─ 被依赖: 所有模块 (get_logger)                 │
 │ ├─ retry.py (重试装饰器)                            │
 │ │  ├─ 依赖: functools, random, time, logger         │
-│ │  └─ 被依赖: vision_tool (自动重试)                │
+│ │  └─ 被依赖: tools.vision (自动重试)                │
 │ └─ rate_limiter.py (限流器)                         │
 │    ├─ 依赖: time, threading                         │
-│    └─ 被依赖: security + tool_registry              │
+│    └─ 被依赖: tools.security + tools.registry       │
 └─────────────────────────────────────────────────────┘
 
 自主进化系统 (平行运行):
-  FeedbackCollector → ExperienceLearner → AdaptiveOptimizer → EvolutionManager
-  └─ 被 RegistryAdapter 触发，收集工具执行反馈
+  learning.feedback → learning.learner → learning.optimizer → learning.evolution
+  └─ 被 tools.registry_adapter 触发，收集工具执行反馈
 ```
 
 ---
@@ -1244,7 +1282,7 @@ echo $DEEPSEEK_API_KEY  # 验证环境变量
    ```
 2. 或修改中间件限流：
    ```python
-   # security.py
+   # tools/security.py
    class SecurityMiddleware:
        rate_limit = 30  # 从 30 → 60 (每分钟 60 个请求)
    ```
@@ -1254,7 +1292,7 @@ echo $DEEPSEEK_API_KEY  # 验证环境变量
 **答**：
 1. 确保提供的图片是有效的 URL 或 base64
 2. 检查图片大小 (< 10MB)
-3. 查看 `vision_tool.py` 中的 retry 日志
+3. 查看 `tools/vision.py` 中的 retry 日志
 
 ### Q5: ChromaDB 连接失败
 
@@ -1267,7 +1305,6 @@ echo $DEEPSEEK_API_KEY  # 验证环境变量
 2. 删除损坏的数据库并重新初始化：
    ```bash
    rm -rf ./data/chroma_db/
-   python create_vector_db.py
    ```
 
 ### Q6: 自主进化系统不工作
@@ -1275,7 +1312,7 @@ echo $DEEPSEEK_API_KEY  # 验证环境变量
 **答**：
 1. 确保已调用 `init_evolution()`：
    ```python
-   from agent_core import init_evolution
+   from agent.core import init_evolution
    init_evolution(interval=3600)  # 每小时一次
    ```
 2. 检查 `evolution_data/` 目录是否有新文件生成
@@ -1327,5 +1364,5 @@ echo $DEEPSEEK_API_KEY  # 验证环境变量
 | 版本 | 日期 | 变更 |
 |------|------|------|
 | v6.2 | 2026-04 | 三链联动系统上线（LLMGuard容错层 + ErrorChain错误处理链 + TraceChain链路追踪）；工具清单扩展至22个（新增AOI检测引擎、XML配置工具）；添加Agent评估系统(eval) |
-| v6.1 | 2026-04 | 集成 retry/rate_limiter/health 到主调用链路；security 升级 TokenBucket；tool_registry.execute() 集成限流 |
+| v6.1 | 2026-04 | 集成 retry/rate_limiter/health 到主调用链路；security 升级 TokenBucket；tools.registry.execute() 集成限流 |
 | v6.0 | 2026-04 | 五步架构整合（Config→Registry→Security→Retry→RateLimiter→LLM）；18 个工具注册；自主进化系统 |

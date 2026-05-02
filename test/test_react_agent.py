@@ -24,7 +24,7 @@ ReAct (Reasoning + Acting) 推理循环的单元测试
 
 import pytest
 import json
-from tool_dispatcher import parse_response
+from tools.dispatcher import parse_response
 
 
 # ============================================================

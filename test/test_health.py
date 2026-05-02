@@ -19,9 +19,9 @@ class TestHealthCheck:
         mock_mem.available = 8 * 1024**3
 
         with patch.dict("sys.modules", {"chromadb": mock_chromadb, "httpx": mock_httpx}), \
-             patch("health.psutil") as mock_psutil:
+             patch("tools.health.psutil") as mock_psutil:
             mock_psutil.virtual_memory.return_value = mock_mem
-            from health import health_check
+            from tools.health import health_check
             result = health_check()
             assert result.status_code == 200
             body = result.body.decode()
@@ -41,9 +41,9 @@ class TestHealthCheck:
         mock_mem.available = 8 * 1024**3
 
         with patch.dict("sys.modules", {"chromadb": mock_chromadb, "httpx": mock_httpx}), \
-             patch("health.psutil") as mock_psutil:
+             patch("tools.health.psutil") as mock_psutil:
             mock_psutil.virtual_memory.return_value = mock_mem
-            from health import health_check
+            from tools.health import health_check
             result = health_check()
             assert result.status_code == 503
             body = result.body.decode()
@@ -62,9 +62,9 @@ class TestHealthCheck:
         mock_mem.available = 1 * 1024**3
 
         with patch.dict("sys.modules", {"chromadb": mock_chromadb, "httpx": mock_httpx}), \
-             patch("health.psutil") as mock_psutil:
+             patch("tools.health.psutil") as mock_psutil:
             mock_psutil.virtual_memory.return_value = mock_mem
-            from health import health_check
+            from tools.health import health_check
             result = health_check()
             body = result.body.decode()
             assert "warning" in body

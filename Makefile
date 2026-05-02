@@ -70,7 +70,7 @@ clean: ## 清理测试产物
 # ──────────────────────────────────
 
 run: ## 启动 Demo UI
-	$(PYTHON) demo_ui.py
+	$(PYTHON) -m demo.ui
 
 run-api: ## 启动 API 服务
 	$(PYTHON) main.py

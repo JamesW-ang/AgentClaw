@@ -213,7 +213,7 @@ class TestToolRegistry:
 
     def test_singleton_pattern(self):
         """ToolRegistry 应为单例"""
-        from tool_registry import ToolRegistry
+        from tools.registry import ToolRegistry
         ToolRegistry._instance = None
         r1 = ToolRegistry()
         r2 = ToolRegistry()
@@ -221,7 +221,7 @@ class TestToolRegistry:
 
     def test_register_decorator(self, sample_tool_func):
         """装饰器注册应正确添加工具"""
-        from tool_registry import ToolRegistry, ToolCategory
+        from tools.registry import ToolRegistry, ToolCategory
         ToolRegistry._instance = None
         reg = ToolRegistry()
         @reg.register(
@@ -236,7 +236,7 @@ class TestToolRegistry:
 
     def test_register_func_manual(self, sample_tool_func):
         """手动注册应正确添加工具"""
-        from tool_registry import ToolRegistry, ToolCategory
+        from tools.registry import ToolRegistry, ToolCategory
         ToolRegistry._instance = None
         reg = ToolRegistry()
         reg.register_func(
@@ -249,7 +249,7 @@ class TestToolRegistry:
 
     def test_execute_success(self, sample_tool_func):
         """执行已注册工具应返回成功结果"""
-        from tool_registry import ToolRegistry
+        from tools.registry import ToolRegistry
         ToolRegistry._instance = None
         reg = ToolRegistry()
         reg.register_func(sample_tool_func, name="echo", description="Echo")
@@ -259,7 +259,7 @@ class TestToolRegistry:
 
     def test_execute_kwargs_style(self, sample_tool_func):
         """execute() 应支持 **kwargs 风格传参"""
-        from tool_registry import ToolRegistry
+        from tools.registry import ToolRegistry
         ToolRegistry._instance = None
         reg = ToolRegistry()
         reg.register_func(sample_tool_func, name="echo", description="Echo")
@@ -268,7 +268,7 @@ class TestToolRegistry:
 
     def test_execute_dict_style(self, sample_tool_func):
         """execute() 应支持 dict 风格传参"""
-        from tool_registry import ToolRegistry
+        from tools.registry import ToolRegistry
         ToolRegistry._instance = None
         reg = ToolRegistry()
         reg.register_func(sample_tool_func, name="echo", description="Echo")
@@ -277,7 +277,7 @@ class TestToolRegistry:
 
     def test_execute_not_found(self):
         """执行不存在的工具应返回错误"""
-        from tool_registry import ToolRegistry
+        from tools.registry import ToolRegistry
         ToolRegistry._instance = None
         reg = ToolRegistry()
         result = reg.execute("nonexistent_tool", {})
@@ -286,7 +286,7 @@ class TestToolRegistry:
 
     def test_execute_exception_caught(self):
         """工具抛异常时应捕获并返回失败结果"""
-        from tool_registry import ToolRegistry
+        from tools.registry import ToolRegistry
         ToolRegistry._instance = None
         reg = ToolRegistry()
         def bad_tool():
@@ -298,7 +298,7 @@ class TestToolRegistry:
 
     def test_unregister(self, sample_tool_func):
         """注销工具后应不可调用"""
-        from tool_registry import ToolRegistry
+        from tools.registry import ToolRegistry
         ToolRegistry._instance = None
         reg = ToolRegistry()
         reg.register_func(sample_tool_func, name="echo", description="Echo")
@@ -308,7 +308,7 @@ class TestToolRegistry:
 
     def test_enable_disable(self, sample_tool_func):
         """禁用工具后应返回失败（错误消息为中文）"""
-        from tool_registry import ToolRegistry
+        from tools.registry import ToolRegistry
         ToolRegistry._instance = None
         reg = ToolRegistry()
         reg.register_func(sample_tool_func, name="echo", description="Echo")
@@ -319,7 +319,7 @@ class TestToolRegistry:
 
     def test_get_tools_for_llm(self, sample_tool_func):
         """get_tools_for_llm 应返回 OpenAI function calling schema"""
-        from tool_registry import ToolRegistry
+        from tools.registry import ToolRegistry
         ToolRegistry._instance = None
         reg = ToolRegistry()
         reg.register_func(
@@ -338,7 +338,7 @@ class TestToolRegistry:
 
     def test_call_statistics(self, sample_tool_func):
         """工具调用应更新统计信息（注意内置速率限制）"""
-        from tool_registry import ToolRegistry
+        from tools.registry import ToolRegistry
         ToolRegistry._instance = None
         reg = ToolRegistry()
         reg.register_func(sample_tool_func, name="echo", description="Echo")
@@ -352,7 +352,7 @@ class TestToolRegistry:
 
     def test_list_tools_by_category(self, sample_tool_func):
         """按类别筛选工具应正确工作（需传 category 参数）"""
-        from tool_registry import ToolRegistry, ToolCategory
+        from tools.registry import ToolRegistry, ToolCategory
         ToolRegistry._instance = None
         reg = ToolRegistry()
         reg.register_func(
@@ -364,7 +364,7 @@ class TestToolRegistry:
 
     def test_execute_tracks_failure_stats(self):
         """工具调用失败应记录失败统计（需等待限流器冷却）"""
-        from tool_registry import ToolRegistry
+        from tools.registry import ToolRegistry
         ToolRegistry._instance = None
         reg = ToolRegistry()
         def fail_tool():
@@ -515,12 +515,12 @@ class TestRegistryAdapter:
     def test_get_tool_names(self):
         """get_tool_names 应返回全局 registry 中的工具名列表"""
         try:
-            from tool_registry import ToolRegistry, ToolCategory, registry
-            from registry_adapter import RegistryAdapter
+            from tools.registry import ToolRegistry, ToolCategory, registry
+            from tools.registry_adapter import RegistryAdapter
             # 确保 registry 非空（不依赖其他测试的副作用）
             if len(registry.list_tools()) == 0:
                 try:
-                    import builtin_tools  # noqa: F401 — 触发工具注册
+                    import tools.builtin  # noqa: F401 — 触发工具注册
                 except ImportError:
                     # builtin_tools 不可用时手动注册一个测试工具
                     registry.register_func(
@@ -537,7 +537,7 @@ class TestRegistryAdapter:
     def test_get_langchain_tools(self):
         """get_langchain_tools 应返回 StructuredTool 列表"""
         try:
-            from registry_adapter import RegistryAdapter
+            from tools.registry_adapter import RegistryAdapter
             adapter = RegistryAdapter()
             tools = adapter.get_langchain_tools()
             assert len(tools) >= 1
@@ -555,7 +555,7 @@ class TestSecurityPatterns:
     def test_builtin_tools_has_dangerous_patterns(self):
         """builtin_tools 应定义 DANGEROUS_PATTERNS"""
         try:
-            import builtin_tools
+            import tools.builtin as builtin_tools
             assert hasattr(builtin_tools, 'DANGEROUS_PATTERNS')
             assert len(builtin_tools.DANGEROUS_PATTERNS) > 0
         except ImportError:
@@ -564,7 +564,7 @@ class TestSecurityPatterns:
     def test_builtin_tools_has_command_whitelist(self):
         """builtin_tools 应定义 COMMAND_WHITELIST"""
         try:
-            import builtin_tools
+            import tools.builtin as builtin_tools
             assert hasattr(builtin_tools, 'COMMAND_WHITELIST')
             assert len(builtin_tools.COMMAND_WHITELIST) > 0
         except ImportError:
@@ -573,7 +573,7 @@ class TestSecurityPatterns:
     def test_dangerous_patterns_catch_rm_rf(self):
         """DANGEROUS_PATTERNS 应匹配 rm -rf"""
         try:
-            import builtin_tools
+            import tools.builtin as builtin_tools
             import re
             matched = any(
                 re.search(p, "rm -rf /")
@@ -586,7 +586,7 @@ class TestSecurityPatterns:
     def test_dangerous_patterns_catch_fork_bomb(self):
         """DANGEROUS_PATTERNS 应匹配 fork bomb"""
         try:
-            import builtin_tools
+            import tools.builtin as builtin_tools
             import re
             matched = any(
                 re.search(p, ":(){ :|:& };:")
@@ -607,7 +607,7 @@ class TestSecurityMiddleware:
     def test_middleware_has_sql_patterns(self):
         """SecurityMiddleware 应定义 SQL_PATTERNS"""
         try:
-            from security import SecurityMiddleware
+            from tools.security import SecurityMiddleware
             assert len(SecurityMiddleware.SQL_PATTERNS) > 0
         except ImportError:
             pytest.skip("security module not available")
@@ -615,7 +615,7 @@ class TestSecurityMiddleware:
     def test_middleware_has_xss_patterns(self):
         """SecurityMiddleware 应定义 XSS_PATTERNS"""
         try:
-            from security import SecurityMiddleware
+            from tools.security import SecurityMiddleware
             assert len(SecurityMiddleware.XSS_PATTERNS) > 0
         except ImportError:
             pytest.skip("security module not available")
@@ -623,7 +623,7 @@ class TestSecurityMiddleware:
     def test_middleware_has_sensitive_patterns(self):
         """SecurityMiddleware 应定义 SENSITIVE_PATTERNS"""
         try:
-            from security import SecurityMiddleware
+            from tools.security import SecurityMiddleware
             assert len(SecurityMiddleware.SENSITIVE_PATTERNS) > 0
         except ImportError:
             pytest.skip("security module not available")
@@ -639,7 +639,7 @@ class TestAgentCore:
     def test_init_all_tools(self):
         """init_all_tools 应初始化并返回工具列表"""
         try:
-            from agent_core import init_all_tools
+            from agent.core import init_all_tools
             tools = init_all_tools()
             assert isinstance(tools, list)
             assert len(tools) >= 5
@@ -649,7 +649,7 @@ class TestAgentCore:
     def test_get_tool_summary(self):
         """get_tool_summary 应返回工具摘要信息"""
         try:
-            from agent_core import get_tool_summary
+            from agent.core import get_tool_summary
             summary = get_tool_summary()
             assert isinstance(summary, (str, dict))
         except (ImportError, Exception) as e:

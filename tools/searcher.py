@@ -553,7 +553,7 @@ def create_rag_tool(rag_engine: RAGEngine) -> Dict[str, Any]:
     返回格式符合 AgentClaw Level 2 的 tool 注册接口。
 
     使用:
-        from tool_registry import registry
+        from tools.registry import registry
         rag = RAGEngine()
         rag.add_documents("knowledge/base.md")
         tool_def = create_rag_tool(rag)

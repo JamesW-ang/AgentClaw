@@ -19,7 +19,8 @@ v6.1 变更:
 from dataclasses import dataclass
 import os
 import sys
-
+from dotenv import load_dotenv
+load_dotenv(override=True)
 
 @dataclass(frozen=True)
 class _ConfigValidator:

@@ -77,9 +77,9 @@ sys.modules["feedback_collector"] = _mock_fb
 # 导入自学习模块
 # ─────────────────────────────────────────────
 
-from experience_learner import ExperienceLearner            # noqa: E402
-from adaptive_optimizer import AdaptiveOptimizer            # noqa: E402
-from evolution_manage import EvolutionManager               # noqa: E402
+from learning.learner import ExperienceLearner            # noqa: E402
+from learning.optimizer import AdaptiveOptimizer            # noqa: E402
+from learning.evolution import EvolutionManager               # noqa: E402
 
 
 # ============================================================
@@ -102,12 +102,12 @@ _failure_classifier_cls = None
 
 if VERSION == "v2":
     try:
-        from experience_learner import wilson_score
+        from learning.learner import wilson_score
         _wilson_score_fn = wilson_score
     except ImportError:
         pass
     try:
-        from adaptive_optimizer import FailureClassifier
+        from learning.optimizer import FailureClassifier
         _failure_classifier_cls = FailureClassifier
     except ImportError:
         pass

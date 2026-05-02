@@ -22,7 +22,7 @@ from enum import Enum
 from typing import List, Tuple, Optional
 
 # 确保工作目录正确
-SCRIPT_DIR = Path(__file__).parent
+SCRIPT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from core.logger import get_logger
@@ -468,7 +468,7 @@ def aoi_detect_for_agent(image_path: str, mode: str = "traditional",
 
 def register_aoi_tools():
     """注册 AOI 检测工具到 tool_registry (让 Agent 可以调用 AOI 检测)"""
-    from tool_registry import registry, ToolCategory
+    from tools.registry import registry, ToolCategory
 
     registry.register_func(
         aoi_detect_for_agent,

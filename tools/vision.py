@@ -29,7 +29,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 try:
     from dotenv import load_dotenv
     for env_path in [
-        Path(__file__).parent / ".env",   # 脚本同级目录
+        Path(__file__).resolve().parent.parent / ".env",  # 项目根目录
         Path.cwd() / ".env",               # 当前工作目录
         Path.home() / ".env",               # 用户目录
     ]:
@@ -776,7 +776,7 @@ def get_vision_tool() -> MultiModalVisionTool:
 # ============================================================
 
 try:
-    from tool_registry import registry, ToolCategory
+    from tools.registry import registry, ToolCategory
     
     def _vision_analyze(image_path: str, prompt: str = "") -> dict:
         """分析图片"""
@@ -977,7 +977,7 @@ if __name__ == "__main__":
     # 测试 6: ToolRegistry 集成
     # ----------------------------------------------------------
     try:
-        from tool_registry import registry as reg
+        from tools.registry import registry as reg
         print("\n" + "-" * 40)
         print("ToolRegistry 集成:")
         vision_tools = [t for t in reg.list_tools() if "vision" in t]
