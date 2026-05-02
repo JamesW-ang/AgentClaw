@@ -2,21 +2,29 @@
 # AgentClaw CI Minimal Dependencies - 仅用于 CI 测试
 # ============================================================================
 
-# 核心依赖（测试必需）
+# 核心依赖
 fastapi==0.115.9
-# starlette==0.46.2  # 由 fastapi 自动管理
 pydantic==2.10.6
+pydantic-settings==2.7.1
 python-dotenv==1.1.0
 psutil==6.1.0
+numpy>=1.26.0
 
 # HTTP 客户端
 httpx==0.28.1
 
-# LLM 客户端（测试必需）
+# LLM 客户端
 openai>=1.50.0
 
-# LangGraph（部分测试需要）
+# LangChain + LangGraph
+langchain-core>=0.3.0
+langchain-openai>=0.3.0
 langgraph==0.3.5
+langgraph-prebuilt>=0.1.0
+langgraph-checkpoint-sqlite>=3.0.0
+
+# 可观测性
+prometheus-client>=0.20.0
 
 # 测试框架
 pytest>=7.0

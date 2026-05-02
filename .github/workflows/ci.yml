@@ -35,13 +35,17 @@ jobs:
 
       - name: Run linter
         run: |
-          pip install ruff
-          ruff check . || true
+          ruff check . --output-format=github
 
       - name: Run tests
         run: |
-          pytest test/ -v --tb=short --ignore=test/test_integration.py --ignore=test/test_react_agent.py || true
+          pytest test/ -v --tb=short \
+            --ignore=test/test_integration.py \
+            --ignore=test/test_react_agent.py
 
       - name: Generate coverage
+        if: success()
         run: |
-          pytest test/ --cov=. --cov-report=xml --cov-report=html --ignore=test/test_integration.py --ignore=test/test_react_agent.py || true
+          pytest test/ --cov=. --cov-report=xml --cov-report=html \
+            --ignore=test/test_integration.py \
+            --ignore=test/test_react_agent.py
