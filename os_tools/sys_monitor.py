@@ -9,6 +9,10 @@
 
 import platform
 
+from core.logger import get_logger
+
+logger = get_logger("SystemMonitor")
+
 # psutil 延迟加载 (~5MB)
 _psutil = None
 
@@ -48,6 +52,7 @@ class SystemMonitor:
                 "hostname": platform.node(),
             }
         except Exception as e:
+            logger.error(f"获取系统概览失败: {e}", exc_info=True)
             return {"success": False, "message": f"获取系统概览失败: {e}"}
 
     def get_process_list(self, top_n: int = 10) -> dict:
@@ -83,6 +88,7 @@ class SystemMonitor:
                 "processes": procs[:top_n],
             }
         except Exception as e:
+            logger.error(f"获取进程列表失败: {e}", exc_info=True)
             return {"success": False, "message": f"获取进程列表失败: {e}"}
 
     def get_disk_info(self) -> dict:
@@ -102,6 +108,7 @@ class SystemMonitor:
                 "percent": disk.percent,
             }
         except Exception as e:
+            logger.error(f"获取磁盘信息失败: {e}", exc_info=True)
             return {"success": False, "message": f"获取磁盘信息失败: {e}"}
 
     def get_network_stats(self) -> dict:
@@ -130,4 +137,5 @@ class SystemMonitor:
                 },
             }
         except Exception as e:
+            logger.error(f"获取网络统计失败: {e}", exc_info=True)
             return {"success": False, "message": f"获取网络统计失败: {e}"}

@@ -16,11 +16,14 @@ v6.1 变更:
     - 新增 SERPAPI_KEY（web_search 三级降级需要）
 """
 
+import logging
 import os
 import sys
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
+
+logger = logging.getLogger("Config")
 
 load_dotenv(override=True)
 
@@ -114,10 +117,11 @@ def validate_on_startup() -> None:
     """启动时验证必需配置，缺失则退出"""
     missing = settings.validate()
     if missing:
-        print("Startup FAILED: missing config", file=sys.stderr)
+        logger.critical("Startup FAILED: missing config")
         for m in missing:
-            print(m, file=sys.stderr)
+            logger.critical(m)
         sys.exit(1)
+    logger.info(f"配置验证通过 ({len(settings._DEFINITIONS)} 项已加载)")
 
 
 def create_llm(temperature: float = 0, **kwargs):
@@ -129,8 +133,10 @@ def create_llm(temperature: float = 0, **kwargs):
     """
     from langchain_openai import ChatOpenAI
 
+    model = kwargs.pop("model", settings.LLM_MODEL)
+    logger.info(f"创建 LLM 实例: model={model}, temperature={temperature}")
     return ChatOpenAI(
-        model=kwargs.pop("model", settings.LLM_MODEL),
+        model=model,
         temperature=temperature,
         api_key=kwargs.pop("api_key", settings.DEEPSEEK_API_KEY),
         base_url=kwargs.pop("base_url", settings.DEEPSEEK_BASE_URL),

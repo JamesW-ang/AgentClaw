@@ -147,6 +147,8 @@ class GuardedChatModel(BaseChatModel):
                                 f"arguments for {tc.function.name}: {raw_args[:120]}"
                             )
                             args = _repair_tool_args(raw_args, tc.function.name)
+                            if args:
+                                logger.debug(f"[GuardedChatModel] Tool args repaired: {tc.function.name}")
                         tool_calls.append({
                             "name": tc.function.name,
                             "args": args,

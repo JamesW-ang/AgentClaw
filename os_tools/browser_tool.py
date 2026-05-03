@@ -27,6 +27,10 @@ AgentClaw v6.1 — 浏览器自动化工具
 import os
 import tempfile
 
+from core.logger import get_logger
+
+logger = get_logger("BrowserTool")
+
 
 class BrowserTool:
     """
@@ -37,18 +41,13 @@ class BrowserTool:
     """
 
     def __init__(self, headless: bool = True):
-        """
-        初始化浏览器。
-
-        参数:
-            headless: 是否使用无头模式
-        """
         from playwright.sync_api import sync_playwright
 
         self._playwright = sync_playwright().start()
         self._browser = self._playwright.chromium.launch(headless=headless)
         self._page = self._browser.new_page()
         self._title = ""
+        logger.info(f"浏览器已启动 (headless={headless})")
 
     def navigate(self, url: str, timeout: int = 30000) -> dict:
         """
@@ -70,6 +69,7 @@ class BrowserTool:
                 "url": url,
             }
         except Exception as e:
+            logger.error(f"浏览器导航失败: url={url} — {e}")
             return {"success": False, "message": f"导航失败: {e}"}
 
     def get_content(self) -> dict:
@@ -87,6 +87,7 @@ class BrowserTool:
                 "length": len(content),
             }
         except Exception as e:
+            logger.error(f"获取页面内容失败: {e}")
             return {"success": False, "message": f"获取内容失败: {e}"}
 
     def screenshot(self, path: str = None, full_page: bool = False) -> dict:
@@ -113,6 +114,7 @@ class BrowserTool:
                 "size": file_size,
             }
         except Exception as e:
+            logger.error(f"截图失败: path={path} — {e}")
             return {"success": False, "message": f"截图失败: {e}"}
 
     def close(self):
@@ -120,5 +122,6 @@ class BrowserTool:
         try:
             self._browser.close()
             self._playwright.stop()
-        except Exception:
-            pass
+            logger.info("浏览器已关闭，资源已释放")
+        except Exception as e:
+            logger.warning(f"浏览器关闭时出现异常: {e}")

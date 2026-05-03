@@ -334,6 +334,7 @@ class ToolRegistry:
         # 如果 args 不是字典也不是 None，忽略（防御性处理）
 
         if tool_name not in self._tools:
+            logger.warning(f"工具 '{tool_name}' 未注册，可用: {list(self._tools.keys())}")
             return {
                 "success": False,
                 "result": None,
@@ -343,6 +344,7 @@ class ToolRegistry:
         tool_info = self._tools[tool_name]
 
         if tool_info.status == ToolStatus.DISABLED:
+            logger.warning(f"工具 '{tool_name}' 已被禁用")
             return {
                 "success": False,
                 "result": None,

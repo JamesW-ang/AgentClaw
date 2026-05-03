@@ -12,6 +12,10 @@
 import os
 import shutil
 
+from core.logger import get_logger
+
+logger = get_logger("FileWrite")
+
 # 安全配置
 PATH_BLACKLIST = [
     "/etc/passwd", "/etc/shadow", "/etc/sudoers",
@@ -45,6 +49,7 @@ def file_write(path: str, content: str, mode: str = "write") -> dict:
     abs_path = os.path.abspath(path)
     for blocked in PATH_BLACKLIST:
         if abs_path.startswith(blocked) or abs_path == blocked:
+            logger.warning(f"文件写入被拒绝 — 路径在黑名单中: {abs_path} (匹配: {blocked})")
             return {
                 "success": False,
                 "message": f"安全拦截: 路径在黑名单中 ({blocked})",
@@ -53,6 +58,7 @@ def file_write(path: str, content: str, mode: str = "write") -> dict:
     # ---------- 2. 大小限制检查 ----------
     content_size = len(content.encode("utf-8"))
     if mode == "write" and content_size > MAX_FILE_SIZE:
+        logger.warning(f"文件写入被拒绝 — 内容过大: {content_size}B > {MAX_FILE_SIZE}B")
         return {
             "success": False,
             "message": f"内容过大: {content_size} 字节 > {MAX_FILE_SIZE} 字节限制",
@@ -62,6 +68,7 @@ def file_write(path: str, content: str, mode: str = "write") -> dict:
     content_lower = content.lower()
     for pattern in DANGEROUS_PATTERNS:
         if pattern.lower() in content_lower:
+            logger.warning(f"文件写入被拒绝 — 检测到危险内容: '{pattern}'")
             return {
                 "success": False,
                 "message": f"安全拦截: 检测到危险内容 ({pattern})",
@@ -73,17 +80,16 @@ def file_write(path: str, content: str, mode: str = "write") -> dict:
         backup_path = abs_path + ".bak"
         shutil.copy2(abs_path, backup_path)
         backup_created = True
+        logger.debug(f"已创建备份: {backup_path}")
 
     # ---------- 5. 执行写入 ----------
     try:
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)
         with open(abs_path, "w", encoding="utf-8") as f:
-            if mode == "append":
-                f.write(content)
-            else:
-                f.write(content)
+            f.write(content)
 
         final_size = os.path.getsize(abs_path)
+        logger.info(f"文件写入成功: {abs_path} ({final_size}B, mode={mode}, backup={backup_created})")
         return {
             "success": True,
             "size": final_size,
@@ -93,6 +99,7 @@ def file_write(path: str, content: str, mode: str = "write") -> dict:
         }
 
     except Exception as e:
+        logger.error(f"文件写入失败: {abs_path} — {e}", exc_info=True)
         return {
             "success": False,
             "message": f"写入失败: {e}",

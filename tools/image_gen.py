@@ -72,6 +72,7 @@ def _validate_prompt(prompt: str) -> str:
     prompt_lower = prompt.lower()
     for pattern in DANGEROUS_PATTERNS:
         if pattern.lower() in prompt_lower:
+            logger.warning(f"图片生成被拒绝 — 包含禁止内容: '{pattern}'")
             raise PermissionError(f"提示词包含禁止内容模式 '{pattern}', 请修改后重试")
     return prompt
 
@@ -120,13 +121,15 @@ def image_generate(prompt: str, size: str = "1024x1024",
     validated_prompt = _validate_prompt(prompt)
     validated_size = _validate_size(size)
 
-    # v6: 从 settings 读取智谱 API 配置（CogView 是智谱模型）
     api_key = settings.ZHIPU_API_KEY
     if not api_key:
+        logger.error("图片生成失败 — ZHIPU_API_KEY 未设置")
         raise OSError(
             "未设置 ZHIPU_API_KEY 环境变量。"
             "请执行: export ZHIPU_API_KEY='your-key-here'"
         )
+
+    logger.info(f"开始生成图片: size={validated_size}, prompt_len={len(validated_prompt)}")
     from openai import OpenAI  # 延迟加载 (~50MB)
     client = OpenAI(
         api_key=api_key,
@@ -144,11 +147,13 @@ def image_generate(prompt: str, size: str = "1024x1024",
         req = urllib.request.Request(image_url)
         with urllib.request.urlopen(req) as resp:
             image_data = resp.read()
-
+        logger.info(f"图片生成成功: size={len(image_data)}B, url={image_url[:80]}...")
     except Exception as e:
+        logger.error(f"图片生成 API 调用失败: {e}", exc_info=True)
         raise RuntimeError(f"图片生成 API 调用失败: {e}") from e
 
     file_path = _save_image(image_data, output_dir, validated_prompt)
+    logger.info(f"图片已保存: {file_path} ({len(image_data)}B)")
 
     return {
         "file_path": file_path,

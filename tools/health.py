@@ -26,6 +26,10 @@ import time
 import psutil
 from fastapi.responses import JSONResponse
 
+from core.logger import get_logger
+
+logger = get_logger("HealthCheck")
+
 # ============================================================
 # 健康检查端点
 # ============================================================
@@ -62,86 +66,52 @@ def health_check() -> JSONResponse:
         - 内存检查基于系统 /proc/meminfo (Linux) 或系统 API (其他系统)
     """
 
-    # 存储所有检查结果的字典
     checks = {}
-
-    # 标志位：表示所有检查是否都通过
     all_healthy = True
 
     # ========== 检查 1: ChromaDB 连接 ==========
     try:
-        # 导入 ChromaDB 客户端库
         import chromadb
-
-        # 创建持久化客户端，连接到本地数据库
         client = chromadb.PersistentClient(path="./data/chroma_db")
-
-        # 发送心跳信号，验证连接有效性
-        # heartbeat() 方法会在连接失败时抛出异常
         client.heartbeat()
-
-        # 记录成功状态
         checks["chromadb"] = {"status": "ok"}
-
+        logger.debug("ChromaDB 健康检查通过")
     except Exception as e:
-        # 捕获任何连接错误
-        checks["chromadb"] = {
-            "status": "error",
-            "error": str(e)
-        }
-        # 标记整体状态为不健康
+        checks["chromadb"] = {"status": "error", "error": str(e)}
         all_healthy = False
+        logger.warning(f"ChromaDB 健康检查失败: {e}")
 
     # ========== 检查 2: LLM API 可达性 ==========
     try:
-        # 导入 HTTP 客户端库
         import httpx
-
-        # 发送 HEAD 请求到 DeepSeek API
-        # HEAD 请求只获取响应头，不获取响应体，避免消耗 token
-        resp = httpx.head(
-            "https://api.deepseek.com",
-            timeout=5.0  # 5 秒超时
-        )
-
-        # 记录 API 状态和 HTTP 状态码
-        checks["llm_api"] = {
-            "status": "ok",
-            "status_code": resp.status_code
-        }
-
+        resp = httpx.head("https://api.deepseek.com", timeout=5.0)
+        checks["llm_api"] = {"status": "ok", "status_code": resp.status_code}
+        logger.debug(f"LLM API 可达性检查通过 (HTTP {resp.status_code})")
     except Exception as e:
-        # 捕获任何网络或连接错误
-        checks["llm_api"] = {
-            "status": "error",
-            "error": str(e)
-        }
-        # 标记整体状态为不健康
+        checks["llm_api"] = {"status": "error", "error": str(e)}
         all_healthy = False
+        logger.warning(f"LLM API 可达性检查失败: {e}")
 
     # ========== 检查 3: 系统内存使用 ==========
-    # 获取系统内存信息
     mem = psutil.virtual_memory()
-
-    # 根据内存使用百分比判断状态
-    # - < 85%: 正常 (status: ok)
-    # - >= 85%: 警告 (status: warning，但不影响整体健康)
+    mem_status = "ok" if mem.percent < 85 else "warning"
     checks["memory"] = {
-        "status": "ok" if mem.percent < 85 else "warning",
-        "percent": mem.percent,                              # 内存使用百分比
-        "available_mb": mem.available // (1024 * 1024)      # 可用内存 (MB)
+        "status": mem_status,
+        "percent": mem.percent,
+        "available_mb": mem.available // (1024 * 1024),
     }
+    if mem.percent >= 85:
+        logger.warning(f"内存使用率偏高: {mem.percent:.1f}% (可用 {mem.available // (1024 * 1024)}MB)")
 
-    # ========== 返回结果 ==========
-    # 根据整体状态确定 HTTP 状态码
     status_code = 200 if all_healthy else 503
+    status_text = "healthy" if all_healthy else "degraded"
+    logger.info(f"健康检查完成: {status_text} (ChromaDB={checks['chromadb']['status']}, LLM={checks['llm_api']['status']}, Mem={checks['memory']['status']})")
 
-    # 构建并返回 JSON 响应
     return JSONResponse(
         status_code=status_code,
         content={
-            "status": "healthy" if all_healthy else "degraded",
-            "timestamp": time.time(),     # Unix 时间戳
-            "checks": checks              # 详细的检查结果
+            "status": status_text,
+            "timestamp": time.time(),
+            "checks": checks,
         }
     )

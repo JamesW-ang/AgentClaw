@@ -142,7 +142,7 @@ async def ask(req: Question):
         return Answer(answer=last_msg.content, usage=usage_data)
     except Exception as e:
         elapsed = time.time() - start
-        logger.error(f"请求失败: {e}")
+        logger.error(f"请求失败: {e}", exc_info=True)
 
         # Phase 1: Record error in trace
         if trace is not None:
@@ -200,7 +200,7 @@ async def ask_stream(req: Question):
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
         except Exception as e:
-            logger.error(f"流式请求失败: {e}")
+            logger.error(f"流式请求失败: {e}", exc_info=True)
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(

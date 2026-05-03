@@ -12,6 +12,10 @@ import time
 from collections import deque
 from dataclasses import asdict, dataclass, field
 
+from core.logger import get_logger
+
+logger = get_logger("Feedback")
+
 # ============================================================
 # 反馈信号数据类
 # ============================================================
@@ -105,9 +109,10 @@ class FeedbackCollector:
         """
         # 将信号添加到缓冲队列
         self.signals.append(signal)
+        status = "success" if signal.success else "failure"
+        logger.debug(f"反馈信号已收集: task={signal.task_id}, tool={signal.tool_name}, status={status}, latency={signal.latency:.3f}s")
 
         # 每 50 条信号自动持久化一次
-        # 这样既能降低 I/O 开销，又能防止数据丢失
         if len(self.signals) % 50 == 0:
             self._save()
 
@@ -140,60 +145,30 @@ class FeedbackCollector:
         return [s for s in self.signals if s.tool_name == tool_name]
 
     def _save(self):
-        """
-        将缓冲区中的反馈信号保存到 JSONL 文件。
-
-        工作流程:
-        1. 转换每条反馈信号为字典格式
-        2. 以 JSON 格式写入文件 (每行一条记录)
-        3. 清空缓冲区以释放内存
-
-        文件格式: JSONL (JSON Lines)
-        - 每行是一个完整的 JSON 对象
-        - 支持流式处理和逐行读取
-        """
-        # 构造反馈文件路径
         path = os.path.join(self.persist_dir, "feedback.jsonl")
-
-        # 以追加模式打开文件
-        with open(path, "a") as f:
-            # 遍历缓冲区中的所有信号
-            for s in self.signals:
-                # 将反馈信号转换为字典
-                signal_dict = asdict(s)
-                # 写入 JSON 格式 (ensure_ascii=False 保持中文)
-                f.write(json.dumps(signal_dict, ensure_ascii=False) + "\n")
-
-        # 清空缓冲区
-        self.signals.clear()
+        count = len(self.signals)
+        try:
+            with open(path, "a") as f:
+                for s in self.signals:
+                    signal_dict = asdict(s)
+                    f.write(json.dumps(signal_dict, ensure_ascii=False) + "\n")
+            logger.info(f"反馈数据已持久化: {count} 条 -> {path}")
+        except Exception as e:
+            logger.error(f"反馈数据持久化失败: {path} — {e}", exc_info=True)
+        finally:
+            self.signals.clear()
 
     def _load(self):
-        """
-        从 JSONL 文件中加载已保存的反馈信号。
-
-        工作流程:
-        1. 检查反馈文件是否存在
-        2. 逐行读取 JSON 数据
-        3. 重构反馈信号对象并加入缓冲区
-        4. 自动处理异常行 (格式错误等)
-
-        容错: 遇到无效的 JSON 行会跳过，不中断加载过程
-        """
-        # 构造反馈文件路径
         path = os.path.join(self.persist_dir, "feedback.jsonl")
-
-        # 检查文件是否存在
         if os.path.exists(path):
+            loaded = 0
             with open(path) as f:
-                # 逐行读取文件
                 for line in f:
                     try:
-                        # 解析 JSON 行
                         data = json.loads(line.strip())
-                        # 重构反馈信号对象
                         signal = FeedbackSignal(**data)
-                        # 添加到缓冲区
                         self.signals.append(signal)
+                        loaded += 1
                     except Exception:
-                        # 跳过无效行 (格式错误等)
                         pass
+            logger.info(f"反馈数据已加载: {loaded} 条 <- {path}")

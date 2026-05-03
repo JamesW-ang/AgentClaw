@@ -10,6 +10,10 @@
 import subprocess
 import time
 
+from core.logger import get_logger
+
+logger = get_logger("ProcessMgr")
+
 # 命令白名单（只允许这些前缀的命令）
 ALLOWED_PREFIXES = [
     "python", "python3", "node", "npm", "echo",
@@ -41,6 +45,7 @@ class ProcessManager:
         if name in self._processes:
             old = self._processes[name]["proc"]
             if old.poll() is None:
+                logger.warning(f"进程 '{name}' 已在运行，拒绝重复启动")
                 return {"success": False, "message": f"进程 '{name}' 已在运行"}
 
         # ---------- 2. 命令白名单检查 ----------
@@ -52,6 +57,7 @@ class ProcessManager:
                 break
 
         if not allowed:
+            logger.warning(f"命令不在白名单中，拒绝执行: {command}")
             return {
                 "success": False,
                 "message": f"命令不在白名单中: {command}",
@@ -71,12 +77,14 @@ class ProcessManager:
                 "cmd": command,
                 "start_time": time.time(),
             }
+            logger.info(f"进程已启动: name={name}, PID={proc.pid}, cmd='{command}'")
             return {
                 "success": True,
                 "pid": proc.pid,
                 "message": f"进程 '{name}' 已启动 (PID={proc.pid})",
             }
         except Exception as e:
+            logger.error(f"进程启动失败: name={name}, cmd='{command}' — {e}", exc_info=True)
             return {"success": False, "message": f"启动失败: {e}"}
 
     def list_processes(self) -> dict:
@@ -142,11 +150,13 @@ class ProcessManager:
             {"success": bool, "message": str}
         """
         if name not in self._processes:
+            logger.warning(f"进程 '{name}' 不存在，无法停止")
             return {"success": False, "message": f"进程 '{name}' 不存在"}
 
         proc = self._processes[name]["proc"]
 
         if proc.poll() is not None:
+            logger.debug(f"进程 '{name}' 已停止 (returncode={proc.returncode})")
             return {"success": True, "message": f"进程 '{name}' 已停止"}
 
         # SIGTERM
@@ -154,11 +164,14 @@ class ProcessManager:
             proc.terminate()
             try:
                 proc.wait(timeout=2)
+                logger.info(f"进程 '{name}' (PID={proc.pid}) 已通过 SIGTERM 停止")
             except subprocess.TimeoutExpired:
                 # SIGKILL
                 proc.kill()
                 proc.wait()
+                logger.info(f"进程 '{name}' (PID={proc.pid}) 未响应 SIGTERM，已通过 SIGKILL 强制停止")
         except Exception as e:
+            logger.error(f"进程停止失败: name={name}, PID={proc.pid} — {e}", exc_info=True)
             return {"success": False, "message": f"停止失败: {e}"}
 
         return {"success": True, "message": f"进程 '{name}' 已停止"}

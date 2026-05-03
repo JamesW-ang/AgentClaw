@@ -717,7 +717,7 @@ def rag_search(query: str, top_k: int = 3) -> dict:
             "details": formatted,
         }
     except Exception as e:
-        logger.error(f"知识库检索异常: {e}")
+        logger.error(f"知识库检索异常: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 
