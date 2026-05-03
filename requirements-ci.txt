@@ -3,28 +3,26 @@
 # ============================================================================
 
 # 核心依赖
-fastapi==0.115.9
-pydantic==2.10.6
-pydantic-settings==2.7.1
-python-dotenv==1.1.0
-psutil==6.1.0
-numpy>=1.26.0
+fastapi>=0.115.0
+pydantic>=2.7.0
+pydantic-settings>=2.5.0
+python-dotenv>=1.0.0
+psutil>=5.0.0
+numpy>=1.24.0
 
 # HTTP 客户端
-httpx==0.28.1
+httpx>=0.24.0
 
 # LLM 客户端
-openai>=1.50.0
+openai>=1.0.0
 
 # LangChain + LangGraph
 langchain-core>=0.3.0
-langchain-openai>=0.3.0
-langgraph==0.3.5
-langgraph-prebuilt>=0.1.0
-langgraph-checkpoint-sqlite>=3.0.0
+langchain-openai>=0.2.0
+langgraph>=0.2.0
 
 # 可观测性
-prometheus-client>=0.20.0
+prometheus-client>=0.15.0
 
 # 测试框架
 pytest>=7.0
