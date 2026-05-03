@@ -29,6 +29,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+
 # numpy 延迟加载 (~150MB)，仅在首次向量运算时导入
 class _LazyNumpy:
     def __init__(self):

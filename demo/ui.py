@@ -19,7 +19,6 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 # v6: dotenv 加载已移至 core/config.py，不再在此处调用
 
-from core.config import settings  # noqa: E402
 from core.logger import get_logger  # noqa: E402
 
 logger = get_logger("demo_ui")
@@ -899,10 +898,10 @@ def search_logs(level: str, keyword: str, tail_lines: int):
         if tail_lines and tail_lines > 0:
             lines = lines[-tail_lines:]
         if level and level != "ALL":
-            lines = [l for l in lines if level.upper() in l]
+            lines = [line for line in lines if level.upper() in line]
         if keyword and keyword.strip():
             kw = keyword.strip().lower()
-            lines = [l for l in lines if kw in l.lower()]
+            lines = [line for line in lines if kw in line.lower()]
         result = "".join(lines[-500:])
         if not result.strip():
             result = "(无匹配日志)"
@@ -936,10 +935,10 @@ def export_logs(level: str, keyword: str, tail_lines: int):
         if tail_lines and tail_lines > 0:
             lines = lines[-tail_lines:]
         if level and level != "ALL":
-            lines = [l for l in lines if level.upper() in l]
+            lines = [line for line in lines if level.upper() in line]
         if keyword and keyword.strip():
             kw = keyword.strip().lower()
-            lines = [l for l in lines if kw in l.lower()]
+            lines = [line for line in lines if kw in line.lower()]
         export_path = LOG_DIR / f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
         export_path.write_text("".join(lines), encoding="utf-8")
         return f"已导出 {len(lines)} 条日志 → {export_path.name}"
