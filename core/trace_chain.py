@@ -31,18 +31,18 @@
 ═══════════════════════════════════════════════════════════════════════════
 """
 
-import time
 import json
-import os
-import uuid
 import logging
+import os
 import threading
-import traceback
-from enum import Enum
-from dataclasses import dataclass, field
-from typing import Any, Optional, List, Dict
+import time
+import uuid
 from collections import defaultdict
+from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
+from typing import Any
+
 from core.metrics import observe_request, observe_span
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ class SpanKind(Enum):
 class Span:
     """
     一个追踪段: 代表请求处理中的一个阶段
-    
+
     示例:
         Span(id="s1", name="tool.web_search", kind=SpanKind.TOOL,
              parent_id="root", start=1714000000, end=1714000001.5,
@@ -97,9 +97,9 @@ class Span:
     error_category: str = ""
 
     # 补充
-    tags: List[str] = field(default_factory=list)
-    attributes: Dict[str, Any] = field(default_factory=dict)
-    events: List[Dict] = field(default_factory=list)  # 阶段内事件
+    tags: list[str] = field(default_factory=list)
+    attributes: dict[str, Any] = field(default_factory=dict)
+    events: list[dict] = field(default_factory=list)  # 阶段内事件
 
     # token / 计费 (LLM 调用时)
     token_input: int = 0
@@ -163,7 +163,7 @@ class Span:
 class Trace:
     """
     一个请求的完整追踪记录
-    
+
     包含: 请求元信息 + 所有 Span + 最终结果
     """
 
@@ -174,8 +174,8 @@ class Trace:
         self.user_id = user_id
         self.session_id = session_id
 
-        self.spans: List[Span] = []
-        self.span_index: Dict[str, Span] = {}  # id → Span
+        self.spans: list[Span] = []
+        self.span_index: dict[str, Span] = {}  # id → Span
 
         self.start_time = time.time()
         self.end_time = 0.0
@@ -197,8 +197,8 @@ class Trace:
     # ── 创建 Span ──
 
     def start_span(self, name: str, kind: SpanKind = SpanKind.CUSTOM,
-                   parent_id: str = "root", tags: List[str] = None,
-                   attributes: Dict = None) -> Span:
+                   parent_id: str = "root", tags: list[str] = None,
+                   attributes: dict = None) -> Span:
         """开始一个新 Span"""
         span = Span(
             name=name,
@@ -251,13 +251,13 @@ class Trace:
 
     # ── 查询 ──
 
-    def get_span(self, span_id: str) -> Optional[Span]:
+    def get_span(self, span_id: str) -> Span | None:
         return self.span_index.get(span_id)
 
-    def get_spans_by_kind(self, kind: SpanKind) -> List[Span]:
+    def get_spans_by_kind(self, kind: SpanKind) -> list[Span]:
         return [s for s in self.spans if s.kind == kind]
 
-    def get_errors(self) -> List[Span]:
+    def get_errors(self) -> list[Span]:
         return [s for s in self.spans if s.status in (SpanStatus.ERROR, SpanStatus.TIMEOUT)]
 
     @property
@@ -296,7 +296,7 @@ class Trace:
     def timeline(self) -> str:
         """
         生成人类可读的时间线
-        
+
         示例输出:
             [00ms] ⏱ START  request "帮我搜索xxx"
             [02ms] → agent.think       (推理中)
@@ -352,25 +352,25 @@ class Trace:
 class TraceChain:
     """
     全局追踪管理器
-    
+
     用法:
         chain = TraceChain()
-        
+
         # 开始追踪一个请求
         trace = chain.start_trace("帮我搜索xxx", user_id="u123")
-        
+
         # 记录各阶段
         with trace.span("agent.think", SpanKind.AGENT):
             response = llm.chat(...)
             trace.current_span.tokens = 1200
-        
+
         with trace.span("tool.web_search", SpanKind.TOOL):
             results = search(...)
-        
+
         # 结束
         trace.finish(response_text="搜索结果是...", status=SpanStatus.OK)
         chain.end_trace(trace)
-        
+
         # 查看
         print(trace.timeline())
     """
@@ -389,8 +389,8 @@ class TraceChain:
         self._persist_enabled = persist_enabled
         self._console_enabled = console_enabled
 
-        self._traces: Dict[str, Trace] = {}
-        self._all_traces: List[Trace] = []
+        self._traces: dict[str, Trace] = {}
+        self._all_traces: list[Trace] = []
         self._lock = threading.Lock()
 
         # 当前线程的 active trace (用于跨函数传递)
@@ -477,23 +477,23 @@ class TraceChain:
             f"errors={len(trace.get_errors())}"
         )
 
-    def get_active_trace(self) -> Optional[Trace]:
+    def get_active_trace(self) -> Trace | None:
         """获取当前线程的活跃 trace"""
         return getattr(self._active, 'current', None)
 
     # ── 查询 ──
 
-    def get_trace(self, trace_id: str) -> Optional[Trace]:
+    def get_trace(self, trace_id: str) -> Trace | None:
         """按 ID 查找 trace"""
         return self._traces.get(trace_id)
 
-    def get_recent_traces(self, limit: int = 10) -> List[Dict]:
+    def get_recent_traces(self, limit: int = 10) -> list[dict]:
         """获取最近的 trace 列表"""
         with self._lock:
             recent = self._all_traces[-limit:]
         return [t.to_dict() for t in recent]
 
-    def get_error_traces(self, limit: int = 10) -> List[Dict]:
+    def get_error_traces(self, limit: int = 10) -> list[dict]:
         """获取最近的错误 trace"""
         with self._lock:
             errors = [t for t in self._all_traces
@@ -503,7 +503,7 @@ class TraceChain:
     def get_stats(self) -> dict:
         return {**self._stats, 'in_memory': len(self._all_traces)}
 
-    def search_traces(self, keyword: str, limit: int = 20) -> List[Dict]:
+    def search_traces(self, keyword: str, limit: int = 20) -> list[dict]:
         """按关键词搜索历史 trace"""
         keyword = keyword.lower()
         results = []
@@ -524,41 +524,41 @@ class TraceChain:
             filepath = os.path.join(self._persist_dir, f"traces_{date_str}.jsonl")
             with open(filepath, 'a', encoding='utf-8') as f:
                 f.write(json.dumps(trace.to_dict(), ensure_ascii=False) + '\n')
-        except IOError as e:
+        except OSError as e:
             logger.error(f"[Trace] 持久化失败: {e}")
 
 
 # ═══ 5. Trace Span 上下文管理器 ═══
 
-class span_context:
+class span_context:  # noqa: N801
     """
     Span 上下文管理器 (配合 Trace 使用)
-    
+
     用法:
         trace = chain.start_trace("搜索xxx")
-        
+
         with span_context(trace, "agent.think", SpanKind.AGENT) as ctx:
             response = llm.chat(...)
             ctx.set_tokens(1200, 350)
-        
+
         with span_context(trace, "tool.search", SpanKind.TOOL) as ctx:
             ctx.set_input({"query": "xxx"})
             results = search(...)
             ctx.set_output(results)
-    
+
     自动处理: start_span / end_span / 错误捕获
     """
 
     def __init__(self, trace: Trace, name: str, kind: SpanKind = SpanKind.CUSTOM,
-                 parent_id: str = "root", tags: List[str] = None,
-                 attributes: Dict = None):
+                 parent_id: str = "root", tags: list[str] = None,
+                 attributes: dict = None):
         self._trace = trace
         self._name = name
         self._kind = kind
         self._parent_id = parent_id
         self._tags = tags
         self._attributes = attributes
-        self._span: Optional[Span] = None
+        self._span: Span | None = None
 
     def __enter__(self):
         self._span = self._trace.start_span(
@@ -612,20 +612,20 @@ class span_context:
 class TraceDecorator:
     """
     为函数/方法自动添加追踪
-    
+
     用法:
         td = TraceDecorator(chain)
-        
+
         # 自动追踪 LLM 调用
         @td.trace("llm.chat", SpanKind.LLM)
         def chat_completion(messages):
             ...
-        
+
         # 自动追踪工具调用
         @td.trace("tool.search", SpanKind.TOOL)
         def web_search(query):
             ...
-        
+
         # 追踪 + 自动捕获异常
         @td.trace_safe("tool.db", SpanKind.TOOL, fallback=[])
         def query_db(sql):
@@ -636,7 +636,7 @@ class TraceDecorator:
         self._chain = chain
 
     def trace(self, span_name: str, kind: SpanKind = SpanKind.CUSTOM,
-              tags: List[str] = None):
+              tags: list[str] = None):
         """普通追踪装饰器"""
         def decorator(func):
             @functools.wraps(func)
@@ -672,25 +672,24 @@ class TraceDecorator:
                         result = func(*args, **kwargs)
                         ctx.set_output(result)
                         return result
-                    except Exception as e:
+                    except Exception:
                         ctx.set_output(fallback)
                         return fallback
             return wrapper
         return decorator
 
 
-import functools
-
+import functools  # noqa: E402
 
 # ═══ 7. 兼容 logging 的 TraceHandler ═══
 
 class TraceLogHandler(logging.Handler):
     """
     将 logging 日志自动关联到当前 trace
-    
+
     所有 logger.info/warning/error 的日志都会带上 trace_id，
     输出格式: [trace_id] [level] message
-    
+
     用法:
         handler = TraceLogHandler(chain)
         handler.setLevel(logging.INFO)
@@ -708,10 +707,9 @@ class TraceLogHandler(logging.Handler):
         self._write(record)
 
     def _write(self, record):
-        ts = datetime.fromtimestamp(record.created).strftime('%H:%M:%S.%f')[:-3]
-        tid = getattr(record, 'trace_id', '--------')
+        datetime.fromtimestamp(record.created).strftime('%H:%M:%S.%f')[:-3]
+        getattr(record, 'trace_id', '--------')
         msg = self.format(record)
-        line = f"[{tid}] [{ts}] [{record.levelname}] {msg}"
 
         # 写入当前 trace 的 span 事件 (如果有)
         trace = self._chain.get_active_trace()
@@ -726,9 +724,9 @@ class TraceLogHandler(logging.Handler):
 class TracedLogger:
     """
     主动式追踪日志 (比 print/logging 更适合 Agent 场景)
-    
+
     自动关联当前 trace，所有日志都是结构化事件。
-    
+
     用法:
         tlog = TracedLogger(chain)
         tlog.info("开始处理用户输入")           # 自动关联 trace
@@ -740,7 +738,7 @@ class TracedLogger:
     def __init__(self, chain: TraceChain):
         self._chain = chain
 
-    def _current_span(self) -> Optional[Span]:
+    def _current_span(self) -> Span | None:
         trace = self._chain.get_active_trace()
         if trace and trace.spans:
             # 找最后一个未关闭的 span
@@ -805,7 +803,7 @@ class TracedLogger:
 def format_trace_summary(trace: Trace) -> str:
     """
     生成用户友好的请求处理摘要
-    
+
     示例:
         处理完成 (2.1秒)
         → 推理: 0.8秒 (使用 1550 tokens)
@@ -859,24 +857,24 @@ def format_trace_summary(trace: Trace) -> str:
           # 初始化追踪链
           self.trace_chain = TraceChain(persist_dir='data/traces')
           self.tlog = TracedLogger(self.trace_chain)
-          
+
           # 让 logging 也带上 trace_id
           handler = TraceLogHandler(self.trace_chain)
           logging.getLogger().addHandler(handler)
-      
+
       async def process(self, user_input, user_id=""):
           # 1. 开始追踪
           trace = self.trace_chain.start_trace(
               request_text=user_input, user_id=user_id
           )
-          
+
           try:
               # 2. Agent 推理阶段
               with span_context(trace, "agent.think", SpanKind.AGENT) as ctx:
                   plan = await self.plan(user_input)
                   ctx.set_output(plan)
                   self.tlog.info(f"生成执行计划: {len(plan)} 步")
-              
+
               # 3. 工具调用阶段 (每个工具自动追踪)
               for step in plan:
                   with span_context(trace, f"tool.{step.tool}", SpanKind.TOOL) as ctx:
@@ -887,21 +885,21 @@ def format_trace_summary(trace: Trace) -> str:
                       except Exception as e:
                           ctx.set_output({"error": str(e)})
                           self.tlog.error(f"{step.tool} 失败", error=e)
-              
+
               # 4. 生成回复
               with span_context(trace, "agent.respond", SpanKind.LLM) as ctx:
                   response = await self.generate_response(user_input)
                   ctx.set_output(response)
-              
+
               # 5. 结束追踪
               trace.finish(
                   status=SpanStatus.OK,
                   response_text=response,
               )
               self.trace_chain.end_trace(trace)
-              
+
               return response
-          
+
           except Exception as e:
               trace.finish(status=SpanStatus.ERROR, error=str(e))
               self.trace_chain.end_trace(trace)
@@ -912,11 +910,11 @@ def format_trace_summary(trace: Trace) -> str:
 
   chain = TraceChain()
   td = TraceDecorator(chain)
-  
+
   @td.trace("llm.chat", SpanKind.LLM)
   async def call_llm(messages):
       return await client.chat(messages)
-  
+
   @td.trace_safe("tool.search", SpanKind.TOOL, fallback={"results": []})
   async def web_search(query):
       return await requests.get(...)
@@ -928,18 +926,18 @@ def format_trace_summary(trace: Trace) -> str:
   recent = chain.get_recent_traces(10)
   for t in recent:
       print(f"[{t['trace_id']}] {t['status']} {t['duration_ms']}ms {t['request'][:40]}")
-  
+
   # 查看某个请求的完整时间线
   trace = chain.get_trace("abc123def456")
   print(trace.timeline())
-  
+
   # 搜索历史请求
   results = chain.search_traces("搜索失败")
-  
+
   # 查看统计数据
   stats = chain.get_stats()
   print(f"总请求: {stats['total_requests']}, 错误率: {stats['total_errors']/stats['total_requests']:.1%}")
-  
+
   # 持久化的 trace 文件在 data/traces/traces_2025-01-15.jsonl
   # 可用 jq / grep 等工具分析
 """

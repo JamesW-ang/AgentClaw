@@ -2,10 +2,8 @@
 # AgentClaw — ErrorChain 单元测试
 # ============================================================
 
-import os
 import sys
 import time
-import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -15,35 +13,35 @@ class TestErrorClassifier:
     """ErrorClassifier 实例方法 classify(exc, tool_name='') → (ErrorCategory, Severity)"""
 
     def test_classify_timeout(self):
-        from core.error_chain import ErrorClassifier, ErrorCategory
+        from core.error_chain import ErrorCategory, ErrorClassifier
         clf = ErrorClassifier()
         cat, sev = clf.classify(TimeoutError("Connection timed out"))
         assert cat == ErrorCategory.TIMEOUT
         assert cat.retryable
 
     def test_classify_auth(self):
-        from core.error_chain import ErrorClassifier, ErrorCategory
+        from core.error_chain import ErrorCategory, ErrorClassifier
         clf = ErrorClassifier()
         cat, sev = clf.classify(Exception("HTTP 401 Unauthorized"))
         assert cat == ErrorCategory.AUTH
         assert not cat.retryable
 
     def test_classify_rate_limit(self):
-        from core.error_chain import ErrorClassifier, ErrorCategory
+        from core.error_chain import ErrorCategory, ErrorClassifier
         clf = ErrorClassifier()
         cat, sev = clf.classify(Exception("Rate limit exceeded 429"))
         assert cat == ErrorCategory.RATE_LIMIT
         assert cat.retryable
 
     def test_classify_data_error(self):
-        from core.error_chain import ErrorClassifier, ErrorCategory
+        from core.error_chain import ErrorCategory, ErrorClassifier
         clf = ErrorClassifier()
         cat, sev = clf.classify(ValueError("invalid input"))
         assert cat == ErrorCategory.DATA
         assert not cat.retryable
 
     def test_classify_unknown(self):
-        from core.error_chain import ErrorClassifier, ErrorCategory
+        from core.error_chain import ErrorCategory, ErrorClassifier
         clf = ErrorClassifier()
         cat, sev = clf.classify(Exception("some weird error"))
         assert cat == ErrorCategory.UNKNOWN
@@ -51,7 +49,7 @@ class TestErrorClassifier:
         assert not cat.retryable
 
     def test_add_rule(self):
-        from core.error_chain import ErrorClassifier, ErrorCategory, Severity
+        from core.error_chain import ErrorCategory, ErrorClassifier, Severity
         clf = ErrorClassifier()
         clf.add_rule(lambda e: "CUSTOM" in e, ErrorCategory.FATAL, Severity.CRITICAL)
         cat, sev = clf.classify(Exception("CUSTOM ERROR"))
@@ -62,7 +60,7 @@ class TestRetryPolicy:
     """RetryPolicy: max_attempts=3, base_delay=1.0"""
 
     def make_context(self, attempt=1, category=None):
-        from core.error_chain import ErrorContext, ErrorCategory
+        from core.error_chain import ErrorCategory, ErrorContext
         return ErrorContext(
             category=category or ErrorCategory.UNKNOWN,
             attempt=attempt,
@@ -70,19 +68,19 @@ class TestRetryPolicy:
         )
 
     def test_should_retry_on_first_failure(self):
-        from core.error_chain import RetryPolicy, ErrorCategory
+        from core.error_chain import ErrorCategory, RetryPolicy
         policy = RetryPolicy(max_attempts=3)
         ctx = self.make_context(attempt=1, category=ErrorCategory.TIMEOUT)
         assert policy.should_retry(ctx)
 
     def test_should_not_retry_on_last_attempt(self):
-        from core.error_chain import RetryPolicy, ErrorCategory
+        from core.error_chain import ErrorCategory, RetryPolicy
         policy = RetryPolicy(max_attempts=3)
         ctx = self.make_context(attempt=3, category=ErrorCategory.TIMEOUT)
         assert not policy.should_retry(ctx)
 
     def test_should_not_retry_non_retryable(self):
-        from core.error_chain import RetryPolicy, ErrorCategory
+        from core.error_chain import ErrorCategory, RetryPolicy
         policy = RetryPolicy(max_attempts=3)
         ctx = self.make_context(attempt=1, category=ErrorCategory.DATA)
         assert not policy.should_retry(ctx)
@@ -161,7 +159,7 @@ class TestErrorReporter:
     """ErrorReporter 报告收集"""
 
     def test_report(self):
-        from core.error_chain import ErrorReporter, ErrorContext, ErrorCategory, Severity
+        from core.error_chain import ErrorCategory, ErrorContext, ErrorReporter, Severity
         reporter = ErrorReporter(max_history=10)
         ctx = ErrorContext(
             category=ErrorCategory.TIMEOUT, severity=Severity.HIGH,
@@ -174,7 +172,7 @@ class TestErrorReporter:
         assert recent[0]["message"] == "test error"
 
     def test_summary(self):
-        from core.error_chain import ErrorReporter, ErrorContext, ErrorCategory, Severity
+        from core.error_chain import ErrorCategory, ErrorContext, ErrorReporter, Severity
         reporter = ErrorReporter()
         reporter.report(ErrorContext(category=ErrorCategory.TIMEOUT, severity=Severity.HIGH, message="err1"))
         reporter.report(ErrorContext(category=ErrorCategory.AUTH, severity=Severity.HIGH, message="err2"))

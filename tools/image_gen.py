@@ -29,7 +29,7 @@ from core.logger import get_logger
 
 logger = get_logger("ImageGen")
 
-from tools.registry import registry
+from tools.registry import registry  # noqa: E402
 
 # ============================================================
 # 安全与配置常量

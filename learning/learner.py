@@ -13,14 +13,13 @@ v2 升级 (不破坏现有架构):
     新字段均有默认值
 """
 
-import time
 import math
-from collections import defaultdict, Counter
-from typing import Optional, List, Dict, Tuple
-
-from learning.feedback import FeedbackCollector, FeedbackSignal
+import time
+from collections import Counter, defaultdict
 
 from core.logger import get_logger
+from learning.feedback import FeedbackCollector
+
 logger = get_logger("experience_learner")
 
 
@@ -130,16 +129,16 @@ class ExperienceLearner:
 
     def __init__(self, collector: FeedbackCollector):
         self.collector = collector
-        self.strategies: Dict[str, Strategy] = {}
+        self.strategies: dict[str, Strategy] = {}
         self._pattern_cache: list = []
-        self._strategy_vectors: Dict[str, dict] = {}   # TF-IDF 向量缓存
+        self._strategy_vectors: dict[str, dict] = {}   # TF-IDF 向量缓存
         logger.info("ExperienceLearner v2 初始化完成")
 
     # ============================================================
     # 主学习接口 (向后兼容)
     # ============================================================
 
-    def learn_from_history(self, feedback_history: Optional[list] = None):
+    def learn_from_history(self, feedback_history: list | None = None):
         """
         从反馈历史中学习 (v2: 含反模式 + 时间衰减 + 统计评估)
 
@@ -216,7 +215,7 @@ class ExperienceLearner:
     # 策略推荐 (v2: TF-IDF 语义匹配)
     # ============================================================
 
-    def get_strategy(self, task_type: str) -> Optional[Strategy]:
+    def get_strategy(self, task_type: str) -> Strategy | None:
         """
         根据任务类型获取推荐策略 (v2: 双层匹配)
 
@@ -267,7 +266,7 @@ class ExperienceLearner:
 
         return best_match
 
-    def check_anti_pattern(self, tool_sequence: list) -> Optional[Strategy]:
+    def check_anti_pattern(self, tool_sequence: list) -> Strategy | None:
         """
         检查工具调用序列是否命中已知反模式
 
@@ -414,7 +413,7 @@ class ExperienceLearner:
         successes: list,
         overall_rate: float,
         now: float,
-    ) -> Optional[Strategy]:
+    ) -> Strategy | None:
         """
         生成策略 (v2: 含 confidence / support / lift)
 
@@ -502,7 +501,7 @@ class ExperienceLearner:
     # v2: TF-IDF 语义匹配引擎
     # ============================================================
 
-    def _text_to_tfidf(self, text: str) -> Optional[dict]:
+    def _text_to_tfidf(self, text: str) -> dict | None:
         """将文本转为 TF-IDF 稀疏向量 (纯 Python, 零依赖)"""
         tokens = text.lower().split()
         if not tokens:
@@ -511,7 +510,7 @@ class ExperienceLearner:
         tf = Counter(tokens)
         return {word: count / total for word, count in tf.items()}
 
-    def _get_strategy_vector(self, name: str, strat: Strategy) -> Optional[dict]:
+    def _get_strategy_vector(self, name: str, strat: Strategy) -> dict | None:
         """获取策略的 TF-IDF 向量 (带内存缓存)"""
         if name in self._strategy_vectors:
             return self._strategy_vectors[name]

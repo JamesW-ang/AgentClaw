@@ -2,14 +2,13 @@
 # AgentClaw — 学习系统单元测试
 # ============================================================
 
-import os
 import sys
-import time
-import json
 import tempfile
-import pytest
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -82,7 +81,7 @@ class TestFeedbackCollector:
         assert collector.get_by_tool("nonexistent") == []
 
     def test_persist_and_reload(self, collector):
-        from learning.feedback import FeedbackSignal, FeedbackCollector
+        from learning.feedback import FeedbackCollector, FeedbackSignal
         collector.collect(FeedbackSignal("t1", "search", True, 0.5))
         collector.collect(FeedbackSignal("t2", "calc", False, 1.0))
 
@@ -234,9 +233,9 @@ class TestEvolutionManager:
 
     @pytest.fixture
     def evolution(self):
+        from learning.evolution import EvolutionManager
         from learning.feedback import FeedbackCollector
         from learning.learner import ExperienceLearner
-        from learning.evolution import EvolutionManager
         collector = FeedbackCollector()
         learner = ExperienceLearner(collector)
         optimizer = MagicMock()

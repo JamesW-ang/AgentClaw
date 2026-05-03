@@ -7,13 +7,15 @@ v6.1.4 修复:
     2. tool_calls 转发: LLM 返回 tool_calls 时正确传给 LangGraph ReAct
     3. json.loads: tc.function.arguments 是字符串，需 parse 为 dict
 """
-import logging
 import json
-from typing import Any, Callable, Dict, List, Optional, Union, Sequence, Generator
+import logging
+from collections.abc import Callable, Generator, Sequence
+from typing import Any
+
 from langchain_core.callbacks import CallbackManagerForLLMRun
-from langchain_core.messages import BaseMessage, AIMessage, AIMessageChunk
-from langchain_core.outputs import ChatResult, ChatGeneration, ChatGenerationChunk
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
+from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import RunnableBinding
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
@@ -22,7 +24,7 @@ from pydantic import Field
 logger = logging.getLogger(__name__)
 
 
-def _convert_lc_tool_calls_to_openai(tool_calls: List[Dict]) -> List[Dict]:
+def _convert_lc_tool_calls_to_openai(tool_calls: list[dict]) -> list[dict]:
     """Convert LangChain tool_calls format to OpenAI API format.
 
     LangChain: [{"name": "...", "args": {...}, "id": "...", "type": "tool_call"}]
@@ -56,14 +58,14 @@ class GuardedChatModel(BaseChatModel):
         return "guarded-chat-model"
 
     @property
-    def _identifying_params(self) -> Dict[str, Any]:
+    def _identifying_params(self) -> dict[str, Any]:
         return {"temperature": self.temperature, "max_tokens": self.max_tokens}
 
     def bind_tools(
         self,
-        tools: Sequence[Union[Dict[str, Any], type, Callable, BaseTool]],
+        tools: Sequence[dict[str, Any] | type | Callable | BaseTool],
         *,
-        tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
+        tool_choice: str | dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> RunnableBinding:
         kwargs["tools"] = tools
@@ -73,9 +75,9 @@ class GuardedChatModel(BaseChatModel):
 
     def _generate(
         self,
-        messages: List[BaseMessage],
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
         **kwargs: Any,
     ) -> ChatResult:
         """Generate a response using LLMGuard"""
@@ -136,7 +138,7 @@ class GuardedChatModel(BaseChatModel):
         })
 
     @staticmethod
-    def _messages_to_openai(messages: List[BaseMessage]) -> List[Dict[str, Any]]:
+    def _messages_to_openai(messages: list[BaseMessage]) -> list[dict[str, Any]]:
         """Convert LangChain messages to OpenAI API format, preserving tool_call_id."""
         openai_messages = []
         for msg in messages:
@@ -156,9 +158,9 @@ class GuardedChatModel(BaseChatModel):
 
     def _stream(
         self,
-        messages: List[BaseMessage],
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
         **kwargs: Any,
     ) -> Generator[ChatGenerationChunk, None, None]:
         """Stream a response using LLMGuard with streaming enabled."""
@@ -230,9 +232,9 @@ class GuardedChatModel(BaseChatModel):
 
     async def _agenerate(
         self,
-        messages: List[BaseMessage],
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
         **kwargs: Any,
     ) -> ChatResult:
         """Async generate - delegates to sync _generate"""

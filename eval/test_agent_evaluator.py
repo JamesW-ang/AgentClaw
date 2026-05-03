@@ -14,11 +14,10 @@
 import json
 import os
 import sys
-import time
 import tempfile
-import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -370,8 +369,9 @@ class TestEvaluatorIntegration:
 
     def test_load_from_feedback(self):
         """从 FeedbackCollector 加载"""
-        from eval.agent_evaluator import AgentEvaluator
         from dataclasses import dataclass
+
+        from eval.agent_evaluator import AgentEvaluator
 
         ev = AgentEvaluator(mode="fast", persist_dir=tempfile.mkdtemp())
 
@@ -400,7 +400,7 @@ class TestEvaluatorIntegration:
         tmpdir = tempfile.mkdtemp()
         ev = AgentEvaluator(mode="fast", persist_dir=tmpdir)
         ev.add_rag_sample("q?", ["ctx"], "ans")
-        report = ev.evaluate()
+        ev.evaluate()
 
         files = os.listdir(tmpdir)
         assert len(files) == 1

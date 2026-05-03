@@ -20,7 +20,7 @@ AgentClaw 评估测试用例集
     evaluator.add_cases(get_agent_eval_cases())
 """
 
-from eval.runner import TestCase, TaskType
+from eval.runner import TaskType, TestCase
 
 
 def get_agent_eval_cases() -> list:

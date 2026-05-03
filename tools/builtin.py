@@ -446,7 +446,7 @@ def code_execute(code: str, timeout: int = 10) -> dict:
 # 6. file_write — 安全文件写入（os_tools）
 # ============================================================
 
-from os_tools.file_write import file_write as _os_file_write
+from os_tools.file_write import file_write as _os_file_write  # noqa: E402
 
 registry.register_func(
     _os_file_write,
@@ -466,7 +466,7 @@ registry.register_func(
 # 7. sys_monitor — 系统资源监控（os_tools）
 # ============================================================
 
-from os_tools.sys_monitor import SystemMonitor
+from os_tools.sys_monitor import SystemMonitor  # noqa: E402
 
 _sys_monitor = SystemMonitor()
 
@@ -520,7 +520,7 @@ registry.register_func(
 # 8. process_mgr — 进程管理（os_tools）
 # ============================================================
 
-from os_tools.process_mgr import ProcessManager
+from os_tools.process_mgr import ProcessManager  # noqa: E402
 
 _process_mgr = ProcessManager()
 
@@ -577,9 +577,9 @@ registry.register_func(
 # 9. knowledge_search — RAG 知识库搜索 (Step3: ChromaDB 自动切换)
 # ============================================================
 
-import threading
+import threading  # noqa: E402
 
-from tools.searcher import RAGEngine
+from tools.searcher import RAGEngine  # noqa: E402
 
 # 延迟初始化 RAG 引擎
 _rag_engine = None

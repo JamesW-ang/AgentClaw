@@ -18,11 +18,11 @@ v6.1.1 修复:
 
 import os
 import sys
-import json
 import time
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 from starlette.responses import JSONResponse
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -47,7 +47,7 @@ class TestEndToEndRegistryFlow:
 
     def test_full_register_execute_stats_cycle(self):
         """完整注册-执行-统计周期"""
-        from tools.registry import ToolRegistry, ToolCategory
+        from tools.registry import ToolCategory, ToolRegistry
 
         ToolRegistry._instance = None
         reg = ToolRegistry()
@@ -76,7 +76,7 @@ class TestEndToEndRegistryFlow:
 
     def test_register_multiple_tools_and_search(self):
         """注册多个工具后 LLM schema 应包含全部"""
-        from tools.registry import ToolRegistry, ToolCategory
+        from tools.registry import ToolCategory, ToolRegistry
 
         ToolRegistry._instance = None
         reg = ToolRegistry()
@@ -122,9 +122,11 @@ class TestConfigToRegistryIntegration:
         """Config LOG_LEVEL 应正确传播到 Logger"""
         try:
             os.environ["LOG_LEVEL"] = "WARNING"
+            import logging
+
             from core.config import _ConfigValidator
             from core.logger import setup_logging
-            s = _ConfigValidator()
+            _ConfigValidator()
             setup_logging()
             logger = logging.getLogger("agentclaw")
             assert logger.level == logging.WARNING
@@ -328,8 +330,9 @@ class TestSecurityMiddlewareIntegration:
     def test_sql_injection_detected(self):
         """SQL 注入模式应被检测到"""
         try:
-            from tools.security import SecurityMiddleware
             import re
+
+            from tools.security import SecurityMiddleware
             sql_payloads = [
                 "SELECT * FROM users",
                 "DROP TABLE users",
@@ -347,8 +350,9 @@ class TestSecurityMiddlewareIntegration:
     def test_xss_detected(self):
         """XSS 模式应被检测到"""
         try:
-            from tools.security import SecurityMiddleware
             import re
+
+            from tools.security import SecurityMiddleware
             xss_payloads = [
                 "<script>alert('xss')</script>",
                 "javascript:alert(1)",

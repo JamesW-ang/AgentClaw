@@ -3,14 +3,14 @@
   ErrorChain - 统一错误处理链
   AgentClaw v6.1.3
   放置: core/error_chain.py
-  
+
   解决的问题:
     现在每个工具各自抛异常，没有全局兜底。
     一个工具挂了 → 整个agent崩 → 返回裸栈信息给用户。
-  
+
   架构:
     Tool Call → ErrorHandlerChain → [工具级捕获] → [分类] → [重试/降级/兜底] → 安全返回
-    
+
   核心能力:
     1. 全局兜底: 任何异常都不会泄漏裸栈
     2. 错误分类: timeout / network / auth / rate_limit / data / fatal / unknown
@@ -22,16 +22,15 @@
 ═══════════════════════════════════════════════════════════════════════════
 """
 
-import time
-import json
-import os
-import logging
-import traceback
-import threading
 import functools
-from enum import Enum
+import logging
+import threading
+import time
+import traceback
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional, List, Dict
+from enum import Enum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +79,7 @@ class Severity(Enum):
 class ErrorContext:
     """
     错误上下文 - 每个错误携带完整调用信息
-    
+
     Agent 拿到这个就知道: 什么工具、什么参数、什么阶段、第几次尝试、怎么恢复
     """
     # 错误本体
@@ -88,7 +87,7 @@ class ErrorContext:
     severity: Severity = Severity.MEDIUM
     message: str = ""
     detail: str = ""
-    
+
     # 调用信息
     tool_name: str = ""
     tool_args: dict = field(default_factory=dict)
@@ -96,18 +95,18 @@ class ErrorContext:
     timestamp: float = field(default_factory=time.time)
     attempt: int = 1          # 第几次尝试
     max_attempts: int = 3     # 最大尝试次数
-    
+
     # 原始异常
-    original_exception: Optional[Exception] = None
+    original_exception: Exception | None = None
     original_traceback: str = ""
-    
+
     # 恢复信息
     recovery_hint: str = ""    # 给 Agent 的恢复建议
     fallback_result: Any = None  # 降级结果
-    
+
     # 调用链 (嵌套工具调用时)
     parent_call_id: str = ""
-    
+
     def to_dict(self) -> dict:
         return {
             'category': self.category.value,
@@ -123,7 +122,7 @@ class ErrorContext:
             'has_fallback': self.fallback_result is not None,
             'parent_call_id': self.parent_call_id,
         }
-    
+
     def to_agent_message(self) -> str:
         """生成给 Agent 看的错误消息 (不带裸栈)"""
         parts = [f"[{self.category.value.upper()}] {self.message}"]
@@ -143,10 +142,10 @@ class ErrorContext:
 class ErrorClassifier:
     """
     根据异常类型自动分类
-    
+
     支持自定义规则: classifier.add_rule(match_condition, category, severity)
     """
-    
+
     # 内置分类规则 (异常类型前缀/关键字 → 分类)
     BUILTIN_RULES = [
         # 超时
@@ -154,69 +153,69 @@ class ErrorClassifier:
          ErrorCategory.TIMEOUT, Severity.MEDIUM),
         (lambda e: _match_exc(e, 'asyncio.TimeoutError', 'CancelledError'),
          ErrorCategory.TIMEOUT, Severity.MEDIUM),
-        
+
         # 网络
         (lambda e: _match_exc(e, 'ConnectionError', 'ConnectionRefused', 'ConnectionReset',
                               'NetworkError', '网络', '连接'),
          ErrorCategory.NETWORK, Severity.HIGH),
         (lambda e: _match_exc(e, 'requests.Connection', 'urllib.error', 'httpx'),
          ErrorCategory.NETWORK, Severity.HIGH),
-        
+
         # 认证
         (lambda e: _match_exc(e, 'AuthenticationError', 'Unauthorized', '401', '认证',
                               '权限', 'auth', 'token'),
          ErrorCategory.AUTH, Severity.HIGH),
-        
+
         # 限流
         (lambda e: _match_exc(e, 'RateLimit', '429', 'rate_limit', '限流', '频率',
                               'too many'),
          ErrorCategory.RATE_LIMIT, Severity.MEDIUM),
-        
+
         # 数据
         (lambda e: _match_exc(e, 'ValueError', 'KeyError', 'IndexError', 'TypeError',
                               'json.JSONDecodeError', 'ValidationError', '格式', '解析'),
          ErrorCategory.DATA, Severity.LOW),
         (lambda e: _match_exc(e, 'FileNotFoundError', 'FileExistsError', 'PermissionError'),
          ErrorCategory.DATA, Severity.MEDIUM),
-        
+
         # LLM
         (lambda e: _match_exc(e, 'APIError', 'APIConnectionError', 'LLMError',
                               'CompletionError', '模型', 'completion'),
          ErrorCategory.LLM, Severity.HIGH),
-        
+
         # 致命
         (lambda e: _match_exc(e, 'MemoryError', 'SystemError', 'RuntimeError'),
          ErrorCategory.FATAL, Severity.CRITICAL),
     ]
-    
+
     def __init__(self):
         self._rules = list(self.BUILTIN_RULES)
-    
+
     def classify(self, exc: Exception, tool_name: str = '') -> tuple:
         """
         分类异常
-        
+
         Returns:
             (ErrorCategory, Severity)
         """
         exc_str = str(exc)
         exc_type = type(exc).__name__
         full = f"{exc_type}: {exc_str}"
-        
+
         for match_fn, category, severity in self._rules:
             if match_fn(full):
                 return category, severity
-        
+
         # 特殊: KeyboardInterrupt 立即终止
         if isinstance(exc, KeyboardInterrupt):
             return ErrorCategory.FATAL, Severity.CRITICAL
-        
+
         return ErrorCategory.UNKNOWN, Severity.MEDIUM
-    
+
     def add_rule(self, match_fn, category: ErrorCategory, severity: Severity):
         """添加自定义分类规则 (优先于内置规则)"""
         self._rules.insert(0, (match_fn, category, severity))
-    
+
     def add_type_rule(self, exc_type, category: ErrorCategory, severity: Severity):
         """按异常类型添加规则"""
         self.add_rule(
@@ -234,7 +233,7 @@ def _match_exc(text: str, *keywords) -> bool:
 
 class RetryPolicy:
     """可配置的重试策略"""
-    
+
     def __init__(self, max_attempts=3, base_delay=1.0, max_delay=30.0,
                  backoff_factor=2.0, jitter=True, retryable_categories=None):
         """
@@ -252,7 +251,7 @@ class RetryPolicy:
         self.backoff_factor = backoff_factor
         self.jitter = jitter
         self.retryable_categories = retryable_categories
-    
+
     def should_retry(self, ctx: ErrorContext) -> bool:
         """判断是否应该重试"""
         if ctx.attempt >= ctx.max_attempts:
@@ -260,7 +259,7 @@ class RetryPolicy:
         if self.retryable_categories is not None:
             return ctx.category in self.retryable_categories
         return ctx.category.retryable
-    
+
     def get_delay(self, attempt: int) -> float:
         """计算第 N 次重试的等待时间"""
         import random
@@ -276,10 +275,10 @@ class RetryPolicy:
 class CircuitBreaker:
     """
     熔断器 - 连续失败超过阈值后自动熔断
-    
+
     状态: CLOSED(正常) → OPEN(熔断, 直接拒绝) → HALF_OPEN(试探恢复) → CLOSED
     """
-    
+
     def __init__(self, failure_threshold=5, recovery_timeout=60, half_open_max=1):
         """
         Args:
@@ -290,17 +289,17 @@ class CircuitBreaker:
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.half_open_max = half_open_max
-        
+
         self._failures = {}      # tool_name → 连续失败次数
         self._open_at = {}       # tool_name → 熔断开启时间
         self._half_open_count = {}  # tool_name → 半开状态通过数
         self._lock = threading.Lock()
-    
+
     def allow(self, tool_name: str) -> bool:
         """判断是否允许调用"""
         with self._lock:
-            failures = self._failures.get(tool_name, 0)
-            
+            self._failures.get(tool_name, 0)
+
             # 半开状态
             if tool_name in self._open_at:
                 elapsed = time.time() - self._open_at[tool_name]
@@ -312,16 +311,16 @@ class CircuitBreaker:
                         return True
                     return False
                 return False  # 仍在熔断
-            
+
             return True
-    
+
     def record_success(self, tool_name: str):
         """记录成功, 重置计数"""
         with self._lock:
             self._failures[tool_name] = 0
             self._open_at.pop(tool_name, None)
             self._half_open_count.pop(tool_name, None)
-    
+
     def record_failure(self, tool_name: str):
         """记录失败, 可能触发熔断"""
         with self._lock:
@@ -332,7 +331,7 @@ class CircuitBreaker:
                     f"[CircuitBreaker] 熔断触发: {tool_name}, "
                     f"连续失败={self._failures[tool_name]}"
                 )
-    
+
     def get_state(self, tool_name: str) -> str:
         """获取状态: closed / open / half_open"""
         with self._lock:
@@ -348,7 +347,7 @@ class CircuitBreaker:
 
 class ErrorReporter:
     """统一错误收集与上报"""
-    
+
     def __init__(self, max_history=1000, callback=None):
         """
         Args:
@@ -359,34 +358,34 @@ class ErrorReporter:
         self._max_history = max_history
         self._callback = callback
         self._counts = {}  # category → count
-    
+
     def report(self, ctx: ErrorContext):
         """记录错误"""
         self._history.append(ctx)
         if len(self._history) > self._max_history:
             self._history = self._history[-self._max_history:]
-        
+
         cat = ctx.category.value
         self._counts[cat] = self._counts.get(cat, 0) + 1
-        
+
         # 日志
         log_fn = logger.error if ctx.severity.value >= Severity.HIGH.value else logger.warning
         log_fn(f"[ErrorChain] {ctx.to_agent_message()}")
-        
+
         # 回调
         if self._callback:
             try:
                 self._callback(ctx)
             except Exception as e:
                 logger.error(f"[ErrorReporter] 回调失败: {e}")
-        
+
         # 写入自学习 (如果有 ExperienceLearner)
         self._report_to_learner(ctx)
-    
+
     def get_recent(self, limit=20) -> list:
         """获取最近的错误"""
         return [ctx.to_dict() for ctx in self._history[-limit:]]
-    
+
     def get_summary(self) -> dict:
         """获取错误统计"""
         return {
@@ -394,7 +393,7 @@ class ErrorReporter:
             'by_category': dict(self._counts),
             'recent_5': [ctx.to_dict() for ctx in self._history[-5:]],
         }
-    
+
     def _report_to_learner(self, ctx: ErrorContext):
         """将错误经验写入自学习模块"""
         try:
@@ -402,7 +401,8 @@ class ErrorReporter:
             import inspect
             frame = inspect.currentframe()
             for _ in range(15):  # 往上查15层
-                if frame is None: break
+                if frame is None:
+                    break
                 agent = frame.f_locals.get('self')
                 if agent is not None:
                     learner = getattr(agent, 'experience_learner', None)
@@ -426,42 +426,42 @@ class ErrorReporter:
 class ErrorChain:
     """
     统一错误处理链 - 主入口
-    
+
     用法:
         chain = ErrorChain()
-        
+
         # 方式1: 手动包装调用
         result = chain.execute(tool_name="search", func=my_search, args={"query": "..."})
-        
+
         # 方式2: 装饰器
         @chain.tool_guard("web_search", fallback="搜索暂不可用")
         def web_search(query):
             ...
-        
+
         # 方式3: 全局兜底 (在 Agent 主循环中)
         try:
             result = agent.run(user_input)
         except Exception as e:
             safe_result = chain.handle_global(e, context="agent_main_loop")
     """
-    
+
     def __init__(self, retry_policy=None, classifier=None, reporter=None, circuit_breaker=None):
         self.retry = retry_policy or RetryPolicy(max_attempts=3)
         self.classifier = classifier or ErrorClassifier()
         self.reporter = reporter or ErrorReporter()
         self.circuit = circuit_breaker or CircuitBreaker()
-        
+
         # 工具级配置: tool_name → {fallback, retry_override, is_critical}
         self._tool_configs = {}
-        
+
         # 全局兜底回调
         self._global_fallback = None
-    
+
     def configure_tool(self, tool_name, fallback=None, retry_policy=None,
                        is_critical=False, skip_circuit=False):
         """
         配置单个工具的错误处理策略
-        
+
         Args:
             tool_name:     工具名
             fallback:      降级结果 (值或 callable(ctx) → value)
@@ -475,25 +475,25 @@ class ErrorChain:
             'is_critical': is_critical,
             'skip_circuit': skip_circuit,
         }
-    
+
     def set_global_fallback(self, fallback_fn):
         """设置全局兜底: fallback_fn(ctx) → result"""
         self._global_fallback = fallback_fn
-    
+
     def execute(self, tool_name: str, func: Callable, args: dict = None,
                 kwargs: dict = None, caller_context: str = '') -> Any:
         """
         执行工具调用，经过完整错误处理链
-        
+
         Args:
             tool_name:      工具名称
             func:           工具函数
             args/kwargs:    调用参数
             caller_context: 调用方描述 (用于错误追踪)
-        
+
         Returns:
             工具返回值 或 降级结果
-            
+
         永远不会抛异常到调用方 (除非 is_critical=True)
         """
         import uuid
@@ -502,7 +502,7 @@ class ErrorChain:
         config = self._tool_configs.get(tool_name, {})
         retry = config.get('retry_policy') or self.retry
         call_id = uuid.uuid4().hex[:8]
-        
+
         # 熔断检查
         if not config.get('skip_circuit') and not self.circuit.allow(tool_name):
             ctx = ErrorContext(
@@ -519,7 +519,7 @@ class ErrorChain:
             if fallback is not None:
                 return fallback
             return self._global_catch(ctx)
-        
+
         # 执行 + 重试循环
         last_ctx = None
         for attempt in range(1, retry.max_attempts + 1):
@@ -528,10 +528,10 @@ class ErrorChain:
                 # 成功
                 self.circuit.record_success(tool_name)
                 return result
-                
+
             except Exception as exc:
                 category, severity = self.classifier.classify(exc, tool_name)
-                
+
                 last_ctx = ErrorContext(
                     category=category,
                     severity=severity,
@@ -546,35 +546,35 @@ class ErrorChain:
                     original_traceback=traceback.format_exc(),
                     parent_call_id=caller_context,
                 )
-                
+
                 # 自动恢复建议
                 last_ctx.recovery_hint = self._auto_hint(category, tool_name)
-                
+
                 self.reporter.report(last_ctx)
                 self.circuit.record_failure(tool_name)
-                
+
                 # 不重试 → 立即降级
                 if not retry.should_retry(last_ctx):
                     break
-                
+
                 # 等待退避
                 delay = retry.get_delay(attempt)
                 logger.info(f"[ErrorChain] {tool_name} 第{attempt}次失败, {delay:.1f}s后重试 ({category.value})")
                 time.sleep(delay)
-        
+
         # 所有重试耗尽 → 降级/兜底
         return self._graceful_degrade(last_ctx, config)
-    
+
     def handle_global(self, exc: Exception, context: str = '',
                       tool_name: str = '') -> Any:
         """
         全局兜底 - Agent 主循环最外层调用
-        
+
         捕获任何未被工具级处理的异常。
         返回安全的降级结果，永远不会抛异常。
         """
         category, severity = self.classifier.classify(exc, tool_name)
-        
+
         ctx = ErrorContext(
             category=category,
             severity=Severity.CRITICAL,
@@ -586,29 +586,29 @@ class ErrorChain:
             original_traceback=traceback.format_exc(),
             recovery_hint="系统遇到问题，请稍后重试或换一种方式描述需求",
         )
-        
+
         self.reporter.report(ctx)
         return self._global_catch(ctx)
-    
+
     def tool_guard(self, tool_name, fallback=None, **config):
         """
         装饰器: 为工具函数加上错误保护
-        
+
         @chain.tool_guard("web_search", fallback={"results": []})
         def web_search(query):
             return requests.get(...)
         """
         self.configure_tool(tool_name, fallback=fallback, **config)
-        
+
         def decorator(func):
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
                 return self.execute(tool_name, func, kwargs=kwargs)
             return wrapper
         return decorator
-    
+
     # ── 内部方法 ──
-    
+
     def _resolve_fallback(self, ctx, config):
         """解析降级结果"""
         fallback = config.get('fallback')
@@ -621,22 +621,22 @@ class ErrorChain:
                 logger.error(f"[ErrorChain] 降级函数失败: {e}")
                 return None
         return fallback
-    
+
     def _graceful_degrade(self, ctx: ErrorContext, config: dict) -> Any:
         """优雅降级"""
         # 关键工具失败 → 抛出安全的 AgentError
         if config.get('is_critical'):
             raise AgentError(ctx)
-        
+
         # 工具级降级
         fallback = self._resolve_fallback(ctx, config)
         if fallback is not None:
             ctx.fallback_result = fallback
             return fallback
-        
+
         # 全局兜底
         return self._global_catch(ctx)
-    
+
     def _global_catch(self, ctx: ErrorContext) -> Any:
         """全局兜底"""
         if self._global_fallback:
@@ -644,7 +644,7 @@ class ErrorChain:
                 return self._global_fallback(ctx)
             except Exception:
                 pass
-        
+
         # 默认: 返回结构化错误 (给 Agent 消费, 不是给用户看裸栈)
         return {
             '_error': True,
@@ -654,7 +654,7 @@ class ErrorChain:
             '_hint': ctx.recovery_hint,
             '_call_id': ctx.call_id,
         }
-    
+
     def _auto_hint(self, category: ErrorCategory, tool_name: str) -> str:
         """自动生成恢复建议"""
         hints = {
@@ -674,14 +674,14 @@ class ErrorChain:
 class AgentError(Exception):
     """
     安全异常 - 携带结构化信息, 不会泄漏内部细节
-    
+
     只在 is_critical=True 的工具失败时抛出,
     上层捕获后可以直接返回给用户。
     """
     def __init__(self, ctx: ErrorContext):
         self.ctx = ctx
         super().__init__(ctx.to_agent_message())
-    
+
     def to_user_message(self) -> str:
         """生成用户可见的消息 (不含内部信息)"""
         if self.ctx.category == ErrorCategory.AUTH:
@@ -696,7 +696,7 @@ class AgentError(Exception):
 def safe_call(func, *args, tool_name="", fallback=None, retries=3, **kwargs):
     """
     快速安全调用 (无需实例化 ErrorChain)
-    
+
     result = safe_call(requests.get, "https://api.example.com",
                        tool_name="http_get", fallback={"error": "unavailable"})
     """

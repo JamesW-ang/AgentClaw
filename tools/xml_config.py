@@ -902,8 +902,8 @@ def main():
     # ===== 测试4: 注册到 tool_registry =====
     print("\n--- 测试工具注册 ---")
     from tools.registry import registry
-    ToolRegistry = registry.__class__
-    ToolRegistry.reset()
+    tool_registry_cls = registry.__class__
+    tool_registry_cls.reset()
     from tools.registry import registry as fresh_registry
     register_xml_config_tools()
 

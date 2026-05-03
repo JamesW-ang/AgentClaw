@@ -16,12 +16,12 @@ AgentClaw v6.1 — AOI 智能闭环工作流
     pip install langgraph langchain-core langchain-openai
 """
 
-import re
 import json
-import time
+import re
 import sys
+import time
 from pathlib import Path
-from typing import TypedDict, Optional, List, Dict, Any
+from typing import Any, TypedDict
 
 # 确保工作目录正确（以脚本所在目录为基准）
 SCRIPT_DIR = Path(__file__).resolve().parent.parent
@@ -56,13 +56,13 @@ class AOIWorkflowState(TypedDict, total=False):
     messages: list                          # LangGraph 消息列表
     image_path: str                         # 待检测图片路径
     detection_mode: str                     # 检测模式 (traditional/deeplearning/hybrid)
-    config_path: Optional[str]              # XML 配置文件路径
-    initial_result: Optional[dict]          # 首次检测结果 (aoi_detect_for_agent 返回值)
-    rag_cases: Optional[List[dict]]         # RAG 检索到的相似历史调参案例
-    recommended_params: Optional[dict]      # LLM 推荐的参数调整方案
-    xml_write_result: Optional[dict]        # xml_config_write 写入结果
-    reverify_result: Optional[dict]         # 调参后复检结果
-    final_verdict: Optional[dict]           # 最终评估结论
+    config_path: str | None              # XML 配置文件路径
+    initial_result: dict | None          # 首次检测结果 (aoi_detect_for_agent 返回值)
+    rag_cases: list[dict] | None         # RAG 检索到的相似历史调参案例
+    recommended_params: dict | None      # LLM 推荐的参数调整方案
+    xml_write_result: dict | None        # xml_config_write 写入结果
+    reverify_result: dict | None         # 调参后复检结果
+    final_verdict: dict | None           # 最终评估结论
     stage: str                              # 当前阶段追踪
 
 
@@ -79,6 +79,7 @@ def _get_llm():
     if _llm is None:
         try:
             from langchain_openai import ChatOpenAI
+
             from core.config import settings
             _llm = ChatOpenAI(
                 model=settings.LLM_MODEL,
@@ -97,10 +98,10 @@ def _get_llm():
 # RAG 知识库：从 aoi_cases.json 加载历史调参案例
 # ============================================================
 
-_aoi_cases_cache: Optional[List[dict]] = None
+_aoi_cases_cache: list[dict] | None = None
 
 
-def _load_aoi_cases() -> List[dict]:
+def _load_aoi_cases() -> list[dict]:
     """加载 data/aoi_cases.json 历史调参案例（带缓存）"""
     global _aoi_cases_cache
     if _aoi_cases_cache is not None:
@@ -108,7 +109,7 @@ def _load_aoi_cases() -> List[dict]:
 
     cases_path = SCRIPT_DIR / "data" / "aoi_cases.json"
     try:
-        with open(cases_path, "r", encoding="utf-8") as f:
+        with open(cases_path, encoding="utf-8") as f:
             _aoi_cases_cache = json.load(f)
         logger.info(f"已加载 {len(_aoi_cases_cache)} 条历史调参案例")
     except Exception as e:
@@ -117,7 +118,7 @@ def _load_aoi_cases() -> List[dict]:
     return _aoi_cases_cache
 
 
-def _search_similar_cases(query: str, top_k: int = 5) -> List[dict]:
+def _search_similar_cases(query: str, top_k: int = 5) -> list[dict]:
     """
     基于关键词重叠评分的简单 RAG 检索。
 
@@ -181,7 +182,7 @@ def _search_similar_cases(query: str, top_k: int = 5) -> List[dict]:
 # 参数提取：从 LLM 回复中解析 JSON 参数块
 # ============================================================
 
-def _extract_params_from_llm(text: str) -> Optional[Dict[str, Any]]:
+def _extract_params_from_llm(text: str) -> dict[str, Any] | None:
     """
     从 LLM 回复文本中提取参数 JSON。
 
@@ -279,7 +280,7 @@ def _format_detection_report(result: dict) -> str:
     return "\n".join(lines)
 
 
-def _format_cases_for_prompt(cases: List[dict]) -> str:
+def _format_cases_for_prompt(cases: list[dict]) -> str:
     """将 RAG 检索到的案例格式化为 LLM prompt 文本"""
     if not cases:
         return "无相似历史案例"
@@ -366,7 +367,7 @@ def defect_analyst(state: AOIWorkflowState) -> dict:
     # 1.3 LLM 分析
     try:
         llm = _get_llm()
-        from langchain_core.messages import SystemMessage, HumanMessage
+        from langchain_core.messages import HumanMessage, SystemMessage
 
         analysis = llm.invoke([
             SystemMessage(content=DEFECT_ANALYST_PROMPT),
@@ -507,7 +508,7 @@ def param_optimizer(state: AOIWorkflowState) -> dict:
     report_text = _format_detection_report(initial_result)
     try:
         llm = _get_llm()
-        from langchain_core.messages import SystemMessage, HumanMessage
+        from langchain_core.messages import HumanMessage, SystemMessage
 
         prompt = PARAM_OPTIMIZER_PROMPT.format(
             current_params=json.dumps(current_params, ensure_ascii=False),
@@ -706,7 +707,7 @@ def verifier(state: AOIWorkflowState) -> dict:
     llm_verdict = ""
     try:
         llm = _get_llm()
-        from langchain_core.messages import SystemMessage, HumanMessage
+        from langchain_core.messages import HumanMessage, SystemMessage
 
         prompt = VERIFIER_PROMPT.format(
             before=before_text,
@@ -766,7 +767,7 @@ def create_aoi_workflow():
     Returns:
         编译后的 LangGraph CompiledGraph 实例
     """
-    from langgraph.graph import StateGraph, START, END
+    from langgraph.graph import END, START, StateGraph
 
     # 创建状态图
     builder = StateGraph(AOIWorkflowState)

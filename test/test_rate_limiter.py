@@ -1,7 +1,7 @@
 """令牌桶速率限制器测试"""
-import time
 import threading
-import pytest
+import time
+
 from core.rate_limiter import TokenBucket
 
 
@@ -60,7 +60,9 @@ class TestTokenBucket:
             except Exception as e:
                 errors.append(e)
         threads = [threading.Thread(target=worker) for _ in range(10)]
-        for t in threads: t.start()
-        for t in threads: t.join()
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
         assert len(errors) == 0
         assert bucket.tokens >= 0

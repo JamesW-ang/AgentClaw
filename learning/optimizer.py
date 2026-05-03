@@ -16,11 +16,10 @@ v2 升级 (不破坏现有架构):
 """
 
 import time
-import math
-from collections import defaultdict, Counter
-from typing import Optional, List, Dict
+from collections import defaultdict
 
 from core.logger import get_logger
+
 logger = get_logger("adaptive_optimizer")
 
 
@@ -68,15 +67,15 @@ class AdaptiveOptimizer:
 
     def __init__(self):
         # 路由权重表 v2: value 从 float 变为 dict (存储完整统计)
-        self.route_weights: Dict[str, float] = {}
-        self._route_stats: Dict[str, dict] = {}
+        self.route_weights: dict[str, float] = {}
+        self._route_stats: dict[str, dict] = {}
 
         # 工具偏好矩阵: context_keyword -> {tool -> weighted_score}
-        self.tool_preferences: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
-        self._tool_context_counts: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        self.tool_preferences: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+        self._tool_context_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
         # Prompt 模板库 v2: name -> { "current": str, "variants": [{text, score, count}] }
-        self.prompt_templates: Dict[str, dict] = {}
+        self.prompt_templates: dict[str, dict] = {}
 
         logger.info("AdaptiveOptimizer v2 初始化完成")
 
@@ -228,9 +227,9 @@ class AdaptiveOptimizer:
         logger.info(f"Prompt 模板 '{template_name}' 优化: 追加 [{top_category}] 建议 "
                      f"(成功率 {avg_success:.1%}, 变体数 {len(template.get('variants', []))})")
 
-    def _categorize_failures(self, failures: list) -> Dict[str, int]:
+    def _categorize_failures(self, failures: list) -> dict[str, int]:
         """按错误类型分类失败记录"""
-        categories: Dict[str, int] = defaultdict(int)
+        categories: dict[str, int] = defaultdict(int)
 
         for f in failures:
             error_text = f.error_type or ""
@@ -290,7 +289,7 @@ class AdaptiveOptimizer:
         }
         return suggestions.get(category, suggestions["unknown"])
 
-    def prompt_variants_report(self, template_name: str) -> Optional[dict]:
+    def prompt_variants_report(self, template_name: str) -> dict | None:
         """获取 Prompt 模板的变体效果对比报告"""
         template = self.prompt_templates.get(template_name)
         if not template:
@@ -328,7 +327,7 @@ class AdaptiveOptimizer:
         self.tool_preferences[context][tool_name] = old_avg + (score - old_avg) / n
         self._tool_context_counts[context][tool_name] = n
 
-    def get_tool_preference(self, context: str, candidates: Optional[list] = None) -> Optional[str]:
+    def get_tool_preference(self, context: str, candidates: list | None = None) -> str | None:
         """
         获取特定上下文下推荐使用的工具
 
@@ -354,7 +353,7 @@ class AdaptiveOptimizer:
         scored.sort(key=lambda x: x[1], reverse=True)
         return scored[0][0]
 
-    def analyze_failure_patterns(self) -> Dict[str, dict]:
+    def analyze_failure_patterns(self) -> dict[str, dict]:
         """
         生成全局失败模式分析报告
 

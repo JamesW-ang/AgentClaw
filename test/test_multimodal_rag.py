@@ -19,13 +19,11 @@ v6.1.3 修复:
       断言改为同时兼容两种格式
 """
 
-import os
-import sys
-import json
-import pytest
 import base64
+import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -164,7 +162,7 @@ class TestVisionToolMock:
 
     def test_vision_result_dataclass(self):
         """VisionResult 应正确初始化（需要 raw_response 参数）"""
-        from tools.vision import VisionResult, DetectionObject
+        from tools.vision import DetectionObject, VisionResult
         obj = DetectionObject(label="cat", confidence=0.95)
         result = VisionResult(
             description="test",
@@ -189,7 +187,6 @@ class TestVisionToolMock:
     def test_with_api_key_configured(self):
         """有 API key 时 is_configured 应为 True"""
         try:
-            import tools.vision
             from tools.vision import MultiModalVisionTool
             # 显式传 api_key，不走模块变量
             tool = MultiModalVisionTool(api_key="sk-fake-key-for-test")

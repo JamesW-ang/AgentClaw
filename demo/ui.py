@@ -18,14 +18,9 @@ v6 迁移变更:
 """
 import os
 import sys
-import json
 import threading
 import time
-import logging
 from pathlib import Path
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import List, Tuple, Optional, Dict
 
 # 确保工作目录正确（以脚本所在目录为基准）
 SCRIPT_DIR = Path(__file__).resolve().parent.parent
@@ -34,21 +29,21 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 # v6: dotenv 加载已移至 core/config.py，不再在此处调用
 
-from core.config import settings
-from core.logger import get_logger
+from core.config import settings  # noqa: E402
+from core.logger import get_logger  # noqa: E402
+
 logger = get_logger("demo_ui")
 
-import gradio as gr
-
+import gradio as gr  # noqa: E402
 
 # ============================================================
 # AOI 检测引擎（已提取到独立模块 aoi_engine.py）
 # ============================================================
-from aoi.engine import (
-    get_aoi_engine, aoi_visualize, AOIEngine,
+from aoi.engine import (  # noqa: E402
     _aoi_lock,  # 复用 aoi_engine 的线程锁
+    aoi_visualize,
+    get_aoi_engine,
 )
-
 
 # ============================================================
 # 延迟初始化各模块（避免 import 时跑 __main__ 逻辑）
@@ -88,9 +83,9 @@ def get_react_app():
     """获取 ReAct Agent（复用 agent_core 统一实例，消除双实例问题）"""
     global _react_app
     if _react_app is None:
-        from agent.core import get_react_agent
         # 确保工具已注册
         import tools.builtin as builtin_tools  # noqa: F401
+        from agent.core import get_react_agent
         try:
             import tools.vision  # noqa: F401
         except ImportError:
@@ -217,20 +212,19 @@ def get_multi_app(scene="code_review"):
     if scene in _multi_apps:
         return _multi_apps[scene]
 
+    from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
     from langchain_openai import ChatOpenAI
-    from langchain_core.messages import SystemMessage, AIMessage, ToolMessage
-    from langgraph.graph import StateGraph, START, END, MessagesState
-    from langchain_core.tools import tool as lc_tool
+    from langgraph.graph import END, START, MessagesState, StateGraph
+
     from learning.feedback import FeedbackSignal
 
     scene_cfg = MULTI_AGENT_SCENES.get(scene, MULTI_AGENT_SCENES["code_review"])
     collector = get_feedback_collector()
 
     # --- Agent 工具（通过 tool_registry 统一调度，复用已注册工具）---
-    from tools.registry import registry
+
     # 确保工具已注册
-    import tools.builtin as builtin_tools  # 触发 @registry.register 装饰器注册
-    import os_tools.file_write  # 触发 os_tools 注册
+    from tools.registry import registry
 
     # registry → lc_tool 的桥接函数
     def _registry_tool_wrapper(registry_name: str, tool_desc: str = "",
@@ -325,7 +319,9 @@ def get_multi_app(scene="code_review"):
                     logger.info(f"[多Agent] [{role_name}] 第{round_i+1}轮LLM调用...")
                     # 清理历史消息中的 DSML 标签，防止污染
                     import re as _re
-                    from langchain_core.messages import ToolMessage as _TM, AIMessage as _AM
+
+                    from langchain_core.messages import AIMessage as _AM  # noqa: N814
+                    from langchain_core.messages import ToolMessage as _TM  # noqa: N814
                     clean_msgs = []
                     for m in messages:
                         if isinstance(m, _TM):
@@ -391,7 +387,7 @@ def get_multi_app(scene="code_review"):
                     logger.error(f"[多Agent] [{role_name}] 总结生成失败: {e}")
 
             if response is None:
-                final_text = f"Agent 响应失败（请检查API Key和网络连接）"
+                final_text = "Agent 响应失败（请检查API Key和网络连接）"
             else:
                 final_text = response.content if isinstance(response.content, str) else str(response.content)
                 # 最终清洗：移除任何残留的 DSML 标签
@@ -453,21 +449,26 @@ def rag_upload(files):
     if not files:
         return "未选择文件", rag_get_stats()
     import tools.builtin as builtin_tools
-    added = 0; msgs = []
+    added = 0
+    msgs = []
     for f in files:
         try:
             if isinstance(f, str):
-                file_path = f; name = Path(f).name
+                file_path = f
+                name = Path(f).name
             else:
-                file_path = f.name; name = Path(f.name).name
+                file_path = f.name
+                name = Path(f.name).name
             file_size = os.path.getsize(file_path)
             if file_size > RAG_MAX_FILE_SIZE:
                 msgs.append(f"[{name}] 文件过大 ({file_size/1024/1024:.1f}MB)")
                 continue
             if file_size == 0:
-                msgs.append(f"[{name}] 文件为空"); continue
+                msgs.append(f"[{name}] 文件为空")
+                continue
             count = builtin_tools.rag_add_documents(file_path)
-            added += count; msgs.append(f"[{name}] {count} 个文档块")
+            added += count
+            msgs.append(f"[{name}] {count} 个文档块")
         except Exception as e:
             fname = name if 'name' in dir() else str(f)
             msgs.append(f"[{fname}] 失败: {e}")
@@ -511,8 +512,7 @@ def vision_analyze(image, question, output_type):
     if image is None:
         return "请上传一张图片"
     try:
-        import tools.builtin as builtin_tools
-        import tools.vision     # noqa: F401  注册 vision_analyze 到 registry
+        import tools.vision  # noqa: F401  注册 vision_analyze 到 registry
         from tools.registry import registry
 
         # Phase 4: 使用 MultimodalRouter 进行自动路由
@@ -592,7 +592,7 @@ def aoi_load_model(model_file):
     if ok:
         engine.mode = "deeplearning"
         return f"模型加载成功: {Path(path).name}\n尺寸: {engine.onnx_detector.input_size}\n已切换到深度学习模式"
-    return f"模型加载失败，请确认文件为 .onnx 格式且已安装 onnxruntime"
+    return "模型加载失败，请确认文件为 .onnx 格式且已安装 onnxruntime"
 
 def aoi_unload_model():
     """卸载模型"""
@@ -740,7 +740,7 @@ def aoi_closed_loop_run(image, config_path):
             reverify = final_state.get("reverify_result") or {}
             params = final_state.get("recommended_params") or {}
             verdict = final_state.get("final_verdict") or {}
-            stage = final_state.get("stage", "completed")
+            final_state.get("stage", "completed")
 
             # 构建详细报告
             report_parts = []
@@ -777,22 +777,22 @@ def aoi_closed_loop_run(image, config_path):
 
             # 参数调整
             if params:
-                report_parts.append(f"\n[3] 参数优化方案 (Agent 推荐)")
+                report_parts.append("\n[3] 参数优化方案 (Agent 推荐)")
                 for k, v in params.items():
                     report_parts.append(f"  {k}: {v}")
             else:
-                report_parts.append(f"\n[3] 参数优化方案 (无需调参)")
+                report_parts.append("\n[3] 参数优化方案 (无需调参)")
 
             # XML写入结果
             xml_result = final_state.get("xml_write_result")
             if xml_result:
-                report_parts.append(f"\n[4] XML 配置改写")
+                report_parts.append("\n[4] XML 配置改写")
                 report_parts.append(f"  备份路径: {xml_result.get('backup_path', 'N/A')}")
                 report_parts.append(f"  校验警告: {xml_result.get('validation_warnings', []) or '无'}")
 
             # 复检验证
             if reverify:
-                report_parts.append(f"\n[5] 复检验证结果")
+                report_parts.append("\n[5] 复检验证结果")
                 report_parts.append(f"  判定: {'合格 PASS' if reverify.get('pass') else '不合格 FAIL'}")
                 report_parts.append(f"  缺陷总数: {reverify.get('total_defects', 'N/A')}")
                 report_parts.append(f"  严重缺陷: {reverify.get('critical_defects', 'N/A')}")
@@ -800,7 +800,7 @@ def aoi_closed_loop_run(image, config_path):
 
             # 最终判定
             if verdict:
-                report_parts.append(f"\n[6] 最终评估")
+                report_parts.append("\n[6] 最终评估")
                 report_parts.append(f"  改善判定: {verdict.get('improvement', 'N/A')}")
                 report_parts.append(f"  改善幅度: {verdict.get('improvement_detail', 'N/A')}")
                 report_parts.append(f"  风险提示: {verdict.get('risk_warning', 'N/A')}")
@@ -828,9 +828,9 @@ def build_ui():
     # Step2: 启动自主进化系统（零侵入，不阻塞 UI）
     try:
         collector = get_feedback_collector()
+        from learning.evolution import EvolutionManager
         from learning.learner import ExperienceLearner
         from learning.optimizer import AdaptiveOptimizer
-        from learning.evolution import EvolutionManager
 
         learner = ExperienceLearner(collector)
         optimizer = AdaptiveOptimizer()

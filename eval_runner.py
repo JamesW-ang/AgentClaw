@@ -4,10 +4,11 @@ AgentClaw v6 — 评估系统入口（向后兼容包装器）
 """
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent))
 
-from eval.runner import AgentEvaluator
 from eval.cases import get_agent_eval_cases
+from eval.runner import AgentEvaluator
 
 if __name__ == "__main__":
     evaluator = AgentEvaluator(use_mock=True)

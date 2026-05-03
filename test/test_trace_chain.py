@@ -2,12 +2,9 @@
 # AgentClaw — TraceChain 单元测试
 # ============================================================
 
-import os
 import sys
-import time
-import json
 import tempfile
-import pytest
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -51,7 +48,7 @@ class TestTrace:
     """Trace 生命周期"""
 
     def test_trace_creation(self):
-        from core.trace_chain import Trace, SpanStatus
+        from core.trace_chain import SpanStatus, Trace
         trace = Trace(trace_id="test-123", name="test_request")
         assert trace.id == "test-123"
         assert trace.name == "test_request"
@@ -59,7 +56,7 @@ class TestTrace:
         assert len(trace.spans) == 0
 
     def test_start_end_span(self):
-        from core.trace_chain import Trace, SpanKind, SpanStatus
+        from core.trace_chain import SpanKind, SpanStatus, Trace
         trace = Trace(trace_id="t1")
         span = trace.start_span("step1", kind=SpanKind.AGENT)
         assert span.id in trace.span_index
@@ -69,7 +66,7 @@ class TestTrace:
         assert span.end_time > 0
 
     def test_finish(self):
-        from core.trace_chain import Trace, SpanStatus
+        from core.trace_chain import SpanStatus, Trace
         trace = Trace(trace_id="t1")
         trace.start_span("s1")
         time.sleep(0.01)
@@ -78,7 +75,7 @@ class TestTrace:
         assert trace.duration_ms > 0
 
     def test_get_errors(self):
-        from core.trace_chain import Trace, SpanKind, SpanStatus
+        from core.trace_chain import SpanKind, SpanStatus, Trace
         trace = Trace(trace_id="t1")
         ok = trace.start_span("ok", kind=SpanKind.TOOL)
         err = trace.start_span("err", kind=SpanKind.LLM)
@@ -89,7 +86,7 @@ class TestTrace:
         assert errors[0].name == "err"
 
     def test_timeline(self):
-        from core.trace_chain import Trace, SpanKind
+        from core.trace_chain import SpanKind, Trace
         trace = Trace(trace_id="t1")
         s1 = trace.start_span("step1", kind=SpanKind.AGENT)
         trace.end_span(s1.id)
@@ -97,7 +94,7 @@ class TestTrace:
         assert "step1" in tl
 
     def test_to_dict(self):
-        from core.trace_chain import Trace, SpanKind
+        from core.trace_chain import SpanKind, Trace
         trace = Trace(trace_id="t1", name="test")
         s1 = trace.start_span("s1", kind=SpanKind.TOOL)
         trace.end_span(s1.id)
@@ -127,7 +124,7 @@ class TestTraceChain:
         assert chain.get_active_trace() is trace
 
     def test_end_trace(self):
-        from core.trace_chain import TraceChain, SpanStatus
+        from core.trace_chain import TraceChain
         chain = TraceChain(persist_enabled=False)
         trace = chain.start_trace(request_text="test")
         trace.start_span("step1")
@@ -136,7 +133,7 @@ class TestTraceChain:
         assert chain.get_active_trace() is None
 
     def test_end_trace_updates_stats(self):
-        from core.trace_chain import TraceChain, SpanStatus
+        from core.trace_chain import TraceChain
         chain = TraceChain(persist_enabled=False)
         trace = chain.start_trace(request_text="stats_test")
         trace.total_tokens_in = 50
@@ -165,7 +162,7 @@ class TestTraceChain:
         assert len(recent) == 2
 
     def test_get_error_traces(self):
-        from core.trace_chain import TraceChain, SpanStatus
+        from core.trace_chain import SpanStatus, TraceChain
         chain = TraceChain(persist_enabled=False)
         ok = chain.start_trace(request_text="ok")
         chain.end_trace(ok)
@@ -213,7 +210,7 @@ class TestSpanContext:
     """span_context 上下文管理器"""
 
     def test_context_manager(self):
-        from core.trace_chain import Trace, SpanKind, SpanStatus, span_context
+        from core.trace_chain import SpanKind, Trace, span_context
         trace = Trace(trace_id="ctx-test")
         with span_context(trace, "ctx_span", SpanKind.TOOL) as ctx:
             ctx.set_input({"query": "test"})
@@ -223,7 +220,7 @@ class TestSpanContext:
         assert ctx.span.end_time > 0
 
     def test_context_exception_records_error(self):
-        from core.trace_chain import Trace, SpanKind, SpanStatus, span_context
+        from core.trace_chain import SpanKind, SpanStatus, Trace, span_context
         trace = Trace(trace_id="exc-test")
         try:
             with span_context(trace, "fail_span", SpanKind.LLM) as ctx:
@@ -234,7 +231,7 @@ class TestSpanContext:
         assert ctx.span.status == SpanStatus.ERROR
 
     def test_add_event(self):
-        from core.trace_chain import Trace, SpanKind, span_context
+        from core.trace_chain import SpanKind, Trace, span_context
         trace = Trace(trace_id="evt-test")
         with span_context(trace, "evt_span", SpanKind.CUSTOM) as ctx:
             ctx.add_event("milestone", {"step": 1})

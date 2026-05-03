@@ -7,11 +7,8 @@
 #   - SIGTERM → SIGKILL 优雅停止
 # ============================================================
 
-import os
-import signal
 import subprocess
 import time
-
 
 # 命令白名单（只允许这些前缀的命令）
 ALLOWED_PREFIXES = [

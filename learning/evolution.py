@@ -17,13 +17,12 @@ v2 升级 (不破坏现有架构):
 
 import time
 from collections import defaultdict
-from typing import Optional, List, Dict
 
+from core.logger import get_logger
 from learning.feedback import FeedbackCollector
 from learning.learner import ExperienceLearner, Strategy
 from learning.optimizer import AdaptiveOptimizer
 
-from core.logger import get_logger
 logger = get_logger("evolution_manager")
 
 
@@ -61,7 +60,7 @@ class EvolutionManager:
 
         # v2: 进化指标追踪
         self._cycle_count = 0
-        self._metrics_history: List[dict] = []
+        self._metrics_history: list[dict] = []
         self._last_cycle_time = 0.0
 
         logger.info("EvolutionManager v2 初始化完成")
@@ -211,7 +210,7 @@ class EvolutionManager:
     # v2: 反模式预警 (供外部调用)
     # ============================================================
 
-    def check_current_pattern(self, tool_sequence: list) -> Optional[Strategy]:
+    def check_current_pattern(self, tool_sequence: list) -> Strategy | None:
         """
         检查当前工具调用序列是否命中反模式
 
@@ -318,7 +317,7 @@ class EvolutionManager:
     # ============================================================
 
     @staticmethod
-    def _extract_context_keywords(context: str) -> List[str]:
+    def _extract_context_keywords(context: str) -> list[str]:
         """从执行上下文中提取关键词 (用于工具偏好矩阵)"""
         if not context:
             return []

@@ -16,15 +16,12 @@ AgentClaw v6.1.3  自主学习功能演示
 ============================================================
 """
 
-import math
-import os
+import inspect
+import random
 import sys
 import time
-import random
-import inspect
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Optional
 
 # ─────────────────────────────────────────────
 # Mock 外部依赖 (与项目其余模块解耦)
@@ -54,8 +51,8 @@ class FeedbackSignal:
     tool_name: str
     success: bool
     latency: float
-    error_type: Optional[str] = None
-    user_rating: Optional[float] = None
+    error_type: str | None = None
+    user_rating: float | None = None
     timestamp: float = field(default_factory=time.time)
     context: str = ""
 
@@ -77,10 +74,9 @@ sys.modules["feedback_collector"] = _mock_fb
 # 导入自学习模块
 # ─────────────────────────────────────────────
 
-from learning.learner import ExperienceLearner            # noqa: E402
-from learning.optimizer import AdaptiveOptimizer            # noqa: E402
-from learning.evolution import EvolutionManager               # noqa: E402
-
+from learning.evolution import EvolutionManager  # noqa: E402
+from learning.learner import ExperienceLearner  # noqa: E402
+from learning.optimizer import AdaptiveOptimizer  # noqa: E402
 
 # ============================================================
 # v1/v2 自动检测
@@ -271,9 +267,9 @@ def main():
     collector = FeedbackCollector(persist_dir="./demo_evolution_data")
     learner   = make_learner(collector)
     optimizer = make_optimizer()
-    manager   = EvolutionManager(collector, learner, optimizer)
+    EvolutionManager(collector, learner, optimizer)
 
-    ok(f"FeedbackCollector  已创建 (deque maxlen=10000)")
+    ok("FeedbackCollector  已创建 (deque maxlen=10000)")
     ok(f"ExperienceLearner  已创建 ({VERSION})")
     ok(f"AdaptiveOptimizer  已创建 ({VERSION})")
     ok(f"EvolutionManager   已创建 ({VERSION})")
@@ -415,11 +411,16 @@ def main():
             ts = time.time() - days_ago * 86400
             w = learner._time_decay_weight(ts)
             note = ""
-            if days_ago == 0:    note = "权重 = 1.0 (最新数据)"
-            elif days_ago == 7:  note = "半衰期节点, 权重 ≈ 0.5"
-            elif days_ago < 7:   note = "近期数据, 权重 > 0.5"
-            elif days_ago < 14:  note = "中期数据, 权重 0.25 ~ 0.5"
-            else:                note = "远期数据, 权重 < 0.25"
+            if days_ago == 0:
+                note = "权重 = 1.0 (最新数据)"
+            elif days_ago == 7:
+                note = "半衰期节点, 权重 ≈ 0.5"
+            elif days_ago < 7:
+                note = "近期数据, 权重 > 0.5"
+            elif days_ago < 14:
+                note = "中期数据, 权重 0.25 ~ 0.5"
+            else:
+                note = "远期数据, 权重 < 0.25"
             print(f"    {label:<12} {w:>8.4f}  {note}")
 
         w_now = learner._time_decay_weight(time.time())
@@ -608,7 +609,7 @@ def main():
                         bar = "#" * int(rate * 20)
                         print(f"      {tool:<16} 成功率 {rate:>5.1%} ({n}次)  {bar}")
                 else:
-                    print(f"      (样本不足 3 次)")
+                    print("      (样本不足 3 次)")
 
     # ==========================================================
     # 阶段 11: 进化循环
@@ -777,7 +778,7 @@ def main():
     for mod_name in ["experience_learner", "adaptive_optimizer", "evolution_manage"]:
         mod = sys.modules[mod_name]
         if hasattr(mod, "__file__") and mod.__file__:
-            with open(mod.__file__, "r") as f:
+            with open(mod.__file__) as f:
                 content = f.read()
             has_forbidden = False
             for dep in ["import numpy", "import scipy", "import sklearn", "import jieba"]:

@@ -41,8 +41,8 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from core.config import settings
-from core.logger import get_logger
+from core.config import settings  # noqa: E402
+from core.logger import get_logger  # noqa: E402
 
 logger = get_logger("AgentCore")
 
@@ -118,16 +118,15 @@ def init_all_tools():
     logger.info("开始初始化工具注册中心...")
 
     # 1. 内置工具（装饰器自动注册，内部已包含 os_tools 和 rag_searcher 的注册）
+    # 4. AOI 检测工具
+    import aoi.engine
     import tools.builtin
-
-    # 2. 视觉工具（底部 try/except 自动注册 3 个工具）
-    import tools.vision
 
     # 3. 图片生成工具（@registry.register 自动注册 1 个工具）
     import tools.image_gen
 
-    # 4. AOI 检测工具
-    import aoi.engine
+    # 2. 视觉工具（底部 try/except 自动注册 3 个工具）
+    import tools.vision
     aoi.engine.register_aoi_tools()
 
     # 5. XML 配置管理工具（AOI 闭环调参支持）
@@ -255,14 +254,15 @@ def get_react_agent():
         return _react_agent_instance
 
     import sqlite3
+
     from langchain_openai import ChatOpenAI
-    from langgraph.prebuilt import create_react_agent
     from langgraph.checkpoint.sqlite import SqliteSaver
+    from langgraph.prebuilt import create_react_agent
 
     # Phase 1: Use LLMGuard for fault-tolerant LLM calls
     try:
-        from core.llm_guard import LLMGuard
         from core.guarded_chat_model import GuardedChatModel
+        from core.llm_guard import LLMGuard
 
         _llm_guard = LLMGuard(
             default_model=settings.LLM_MODEL,
@@ -366,10 +366,10 @@ def init_evolution(interval: int = 3600):
         return _evolution_manager
 
     try:
+        from learning.evolution import EvolutionManager
         from learning.feedback import FeedbackCollector
         from learning.learner import ExperienceLearner
         from learning.optimizer import AdaptiveOptimizer
-        from learning.evolution import EvolutionManager
 
         _feedback_collector = FeedbackCollector()
         learner = ExperienceLearner(_feedback_collector)

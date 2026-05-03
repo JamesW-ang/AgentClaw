@@ -26,15 +26,13 @@ v6.1.1 更新:
     - 新增 VisionTool fixture：mock 必须清除 ZHIPU_API_KEY 环境变量
 """
 
+import logging
 import os
 import sys
 import time
-import json
-import logging
-import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-from dataclasses import dataclass
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -135,7 +133,7 @@ class TestConfigValidator:
 
     def test_singleton_settings_consistency(self):
         """全局 settings 实例应与新建实例配置一致"""
-        from core.config import settings, _ConfigValidator
+        from core.config import _ConfigValidator, settings
         s = _ConfigValidator()
         assert settings.LLM_MODEL == s.LLM_MODEL
 
@@ -221,7 +219,7 @@ class TestToolRegistry:
 
     def test_register_decorator(self, sample_tool_func):
         """装饰器注册应正确添加工具"""
-        from tools.registry import ToolRegistry, ToolCategory
+        from tools.registry import ToolCategory, ToolRegistry
         ToolRegistry._instance = None
         reg = ToolRegistry()
         @reg.register(
@@ -236,7 +234,7 @@ class TestToolRegistry:
 
     def test_register_func_manual(self, sample_tool_func):
         """手动注册应正确添加工具"""
-        from tools.registry import ToolRegistry, ToolCategory
+        from tools.registry import ToolRegistry
         ToolRegistry._instance = None
         reg = ToolRegistry()
         reg.register_func(
@@ -352,7 +350,7 @@ class TestToolRegistry:
 
     def test_list_tools_by_category(self, sample_tool_func):
         """按类别筛选工具应正确工作（需传 category 参数）"""
-        from tools.registry import ToolRegistry, ToolCategory
+        from tools.registry import ToolCategory, ToolRegistry
         ToolRegistry._instance = None
         reg = ToolRegistry()
         reg.register_func(
@@ -439,8 +437,9 @@ class TestRetryMechanism:
 
     def test_backoff_timing(self):
         """重试间隔应按指数增长"""
-        from core.retry import retry_with_backoff
         import time
+
+        from core.retry import retry_with_backoff
 
         timestamps = []
         call_count = 0
@@ -515,7 +514,7 @@ class TestRegistryAdapter:
     def test_get_tool_names(self):
         """get_tool_names 应返回全局 registry 中的工具名列表"""
         try:
-            from tools.registry import ToolRegistry, ToolCategory, registry
+            from tools.registry import ToolCategory, registry
             from tools.registry_adapter import RegistryAdapter
             # 确保 registry 非空（不依赖其他测试的副作用）
             if len(registry.list_tools()) == 0:
@@ -573,8 +572,9 @@ class TestSecurityPatterns:
     def test_dangerous_patterns_catch_rm_rf(self):
         """DANGEROUS_PATTERNS 应匹配 rm -rf"""
         try:
-            import tools.builtin as builtin_tools
             import re
+
+            import tools.builtin as builtin_tools
             matched = any(
                 re.search(p, "rm -rf /")
                 for p in builtin_tools.DANGEROUS_PATTERNS
@@ -586,8 +586,9 @@ class TestSecurityPatterns:
     def test_dangerous_patterns_catch_fork_bomb(self):
         """DANGEROUS_PATTERNS 应匹配 fork bomb"""
         try:
-            import tools.builtin as builtin_tools
             import re
+
+            import tools.builtin as builtin_tools
             matched = any(
                 re.search(p, ":(){ :|:& };:")
                 for p in builtin_tools.DANGEROUS_PATTERNS

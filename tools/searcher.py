@@ -130,7 +130,7 @@ class DocumentLoader:
     def _load_csv(file_path: str) -> list[dict]:
         """加载 CSV"""
         content = Path(file_path).read_text(encoding="utf-8")
-        lines = [l.strip() for l in content.split("\n") if l.strip()]
+        lines = [line.strip() for line in content.split("\n") if line.strip()]
         return [
             {"content": line, "metadata": {"source": file_path, "type": "csv", "row": i}}
             for i, line in enumerate(lines)

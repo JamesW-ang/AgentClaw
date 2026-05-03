@@ -8,9 +8,9 @@
 #   - 优雅关闭
 # ============================================================
 
+import threading
 import time
 import uuid
-import threading
 
 
 class TaskScheduler:

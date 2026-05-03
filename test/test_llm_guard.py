@@ -10,13 +10,12 @@
     - LLMRetryPolicy: 重试策略
 """
 
-import os
 import sys
 import time
-import json
-import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -177,7 +176,7 @@ class TestLLMGuard:
         assert messages[0]["role"] == "system"
 
     def test_chat_replaces_existing_system(self, guard):
-        result = guard.chat(
+        guard.chat(
             [{"role": "system", "content": "old"}, {"role": "user", "content": "hi"}],
             system_prompt="new system",
         )

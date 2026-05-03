@@ -2,7 +2,8 @@
 Prometheus 指标定义 — 用于整个系统的可观测性
 """
 import time
-from prometheus_client import Counter, Histogram, Gauge
+
+from prometheus_client import Counter, Gauge, Histogram
 
 # === 请求级别指标 ===
 

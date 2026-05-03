@@ -1,7 +1,5 @@
 """健康检查端点测试"""
-import sys
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 
 class TestHealthCheck:

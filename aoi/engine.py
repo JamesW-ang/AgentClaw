@@ -14,18 +14,17 @@ AgentClaw v6.1 — AOI 检测引擎（独立模块）
     可选: pip install onnxruntime  (深度学习模式)
 """
 import sys
-import time
 import threading
-from pathlib import Path
-from dataclasses import dataclass, field, asdict
+import time
+from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import List, Tuple, Optional
+from pathlib import Path
 
 # 确保工作目录正确
 SCRIPT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from core.logger import get_logger
+from core.logger import get_logger  # noqa: E402
 
 logger = get_logger("aoi_engine")
 
@@ -58,7 +57,10 @@ class DetectionMethod(Enum):
 
 @dataclass
 class BoundingBox:
-    x: int; y: int; width: int; height: int
+    x: int
+    y: int
+    width: int
+    height: int
     @property
     def area(self): return self.width * self.height
     @property
@@ -72,8 +74,12 @@ class BoundingBox:
 
 @dataclass
 class Defect:
-    defect_id: str; defect_type: DefectType; severity: Severity
-    bbox: BoundingBox; confidence: float; method: DetectionMethod
+    defect_id: str
+    defect_type: DefectType
+    severity: Severity
+    bbox: BoundingBox
+    confidence: float
+    method: DetectionMethod
     description: str = ""
     def to_dict(self):
         d = asdict(self)
@@ -84,9 +90,13 @@ class Defect:
 
 @dataclass
 class InspectionResult:
-    task_id: str; product_model: str; timestamp: str
-    image_size: Tuple[int, int]; defects: List[Defect] = field(default_factory=list)
-    total_time_ms: float = 0.0; pass_flag: bool = True
+    task_id: str
+    product_model: str
+    timestamp: str
+    image_size: tuple[int, int]
+    defects: list[Defect] = field(default_factory=list)
+    total_time_ms: float = 0.0
+    pass_flag: bool = True
     @property
     def defect_count(self): return len(self.defects)
     @property
@@ -188,8 +198,12 @@ class ONNXDetector:
     }
 
     def __init__(self):
-        self.session = None; self.model_path = None; self.input_size = (640, 640)
-        self.class_names = self.AOI_NAMES; self.conf_threshold = 0.5; self.iou_threshold = 0.45
+        self.session = None
+        self.model_path = None
+        self.input_size = (640, 640)
+        self.class_names = self.AOI_NAMES
+        self.conf_threshold = 0.5
+        self.iou_threshold = 0.45
         self.providers = ["CPUExecutionProvider"]
         try:
             import onnxruntime as ort
@@ -203,7 +217,7 @@ class ONNXDetector:
     @property
     def is_loaded(self): return self.session is not None
 
-    def load_model(self, model_path: str, class_names: Optional[List[str]] = None) -> bool:
+    def load_model(self, model_path: str, class_names: list[str] | None = None) -> bool:
         import onnxruntime as ort
         path = Path(model_path)
         if not path.exists():
@@ -264,8 +278,10 @@ class ONNXDetector:
                 continue
             x, y = (cx - w/2 - pad[0]) / scale, (cy - h/2 - pad[1]) / scale
             w, h = w / scale, h / scale
-            x = max(0, min(x, orig_size[1])); y = max(0, min(y, orig_size[0]))
-            w = min(w, orig_size[1] - x); h = min(h, orig_size[0] - y)
+            x = max(0, min(x, orig_size[1]))
+            y = max(0, min(y, orig_size[0]))
+            w = min(w, orig_size[1] - x)
+            h = min(h, orig_size[0] - y)
             predictions.append({"x": float(x), "y": float(y), "w": float(w), "h": float(h),
                                 "confidence": final_conf, "class_id": cid,
                                 "class_name": self.class_names[cid] if cid < len(self.class_names) else f"class_{cid}"})
@@ -275,18 +291,22 @@ class ONNXDetector:
         for box in boxes:
             keep = True
             for k in kept:
-                x1 = max(box["x"], k["x"]); y1 = max(box["y"], k["y"])
-                x2 = min(box["x"]+box["w"], k["x"]+k["w"]); y2 = min(box["y"]+box["h"], k["y"]+k["h"])
+                x1 = max(box["x"], k["x"])
+                y1 = max(box["y"], k["y"])
+                x2 = min(box["x"] + box["w"], k["x"] + k["w"])
+                y2 = min(box["y"] + box["h"], k["y"] + k["h"])
                 inter = max(0, x2-x1) * max(0, y2-y1)
                 union = box["w"]*box["h"] + k["w"]*k["h"] - inter
                 if union > 0 and inter / union > self.iou_threshold:
-                    keep = False; break
+                    keep = False
+                    break
             if keep:
                 kept.append(box)
         return kept
 
     def detect(self, image, conf_thresh=0.5, iou_thresh=0.45):
-        self.conf_threshold = conf_thresh; self.iou_threshold = iou_thresh
+        self.conf_threshold = conf_thresh
+        self.iou_threshold = iou_thresh
         if not self.is_loaded:
             return []
         t0 = time.perf_counter()
@@ -302,7 +322,8 @@ class ONNXDetector:
             dtype = DefectType.PSEUDO_DEFECT
             for dt in DefectType:
                 if dt.value == cn_name or dt.value == name:
-                    dtype = dt; break
+                    dtype = dt
+                    break
             defects.append(Defect(
                 defect_id=f"D-{i+1:04d}", defect_type=dtype, severity=severity,
                 bbox=BoundingBox(int(p["x"]), int(p["y"]), int(p["w"]), int(p["h"])),
@@ -344,8 +365,10 @@ class AOIEngine:
             for m in merged:
                 if d.defect_type == m.defect_type and d.bbox.iou(m.bbox) > 0.5:
                     if d.confidence > m.confidence:
-                        merged.remove(m); merged.append(d)
-                    dup = True; break
+                        merged.remove(m)
+                        merged.append(d)
+                    dup = True
+                    break
             if not dup:
                 merged.append(d)
         total_ms = (time.perf_counter() - t_start) * 1000
@@ -468,7 +491,7 @@ def aoi_detect_for_agent(image_path: str, mode: str = "traditional",
 
 def register_aoi_tools():
     """注册 AOI 检测工具到 tool_registry (让 Agent 可以调用 AOI 检测)"""
-    from tools.registry import registry, ToolCategory
+    from tools.registry import ToolCategory, registry
 
     registry.register_func(
         aoi_detect_for_agent,

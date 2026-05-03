@@ -7,8 +7,8 @@
 #   - macOS 兼容（无权限时优雅降级）
 # ============================================================
 
-import os
 import platform
+
 import psutil
 
 

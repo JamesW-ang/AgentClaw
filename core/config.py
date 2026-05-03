@@ -16,60 +16,62 @@ v6.1 变更:
     - 新增 SERPAPI_KEY（web_search 三级降级需要）
 """
 
-from dataclasses import dataclass
 import os
 import sys
+from dataclasses import dataclass
+
 from dotenv import load_dotenv
+
 load_dotenv(override=True)
 
 @dataclass(frozen=True)
 class _ConfigValidator:
     """
     中央化配置验证器
-    
+
     配置项定义:
         (名称, 默认值, 是否必需, 描述)
     """
-    
+
     _DEFINITIONS: tuple[tuple[str, str, bool, str], ...] = (
         # DeepSeek API 配置
         ("DEEPSEEK_API_KEY", "", True, "DeepSeek API Key"),
         ("DEEPSEEK_BASE_URL", "https://api.deepseek.com", False, "DeepSeek base URL"),
-        
+
         # 智谱 Zhipu API 配置 (Vision GLM-4V / ImageGen CogView)
         ("ZHIPU_API_KEY", "", False, "Zhipu API Key"),
         ("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4", False, "Zhipu base URL"),
-        
+
         # API 认证配置
         ("API_KEY", "", False, "API authentication key (optional)"),
-        
+
         # LLM 模型配置
         ("LLM_MODEL", "deepseek-chat", False, "Default LLM model"),
-        
+
         # OpenAI API 配置 (可选)
         ("OPENAI_API_KEY", "", False, "OpenAI API Key (optional)"),
         ("OPENAI_BASE_URL", "https://api.openai.com/v1", False, "OpenAI base URL"),
-        
+
         # 视觉模型配置
         ("VISION_MODEL", "glm-4v-flash", False, "Vision model"),
-        
+
         # SerpAPI 配置 (可选，用于 web_search)
         ("SERPAPI_KEY", "", False, "SerpAPI Key (optional, for web_search)"),
-        
+
         # 数据库配置
         ("CHROMA_DB_PATH", "./data/chroma_db", False, "ChromaDB path"),
-        
+
         # 服务端口配置
         ("API_PORT", "8000", False, "API port"),
         ("WEB_PORT", "7860", False, "Web UI port"),
-        
+
         # 日志配置
         ("LOG_LEVEL", "INFO", False, "Log level"),
         ("LOG_DIR", "./data/logs", False, "Log directory"),
-        
+
         # 工具执行配置
         ("TOOL_TIMEOUT", "30", False, "Tool timeout (sec)"),
-        
+
         # Agent 配置
         ("REACT_MAX_ROUNDS", "5", False, "ReAct max rounds"),
     )

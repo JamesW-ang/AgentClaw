@@ -20,13 +20,11 @@ Agent 系统评估框架 — 自动化测试 + 量化指标
 
 import json
 import time
-import asyncio
-import traceback
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from dataclasses import dataclass, field, asdict
-from typing import List, Optional, Dict, Any
-from pathlib import Path
 from enum import Enum
+from pathlib import Path
+from typing import Any
 
 
 class TaskType(Enum):
@@ -49,10 +47,10 @@ class EvalResult(Enum):
 class ToolCall:
     """记录一次工具调用"""
     tool_name: str
-    args: Dict[str, Any]
+    args: dict[str, Any]
     actual_result: Any
     expected_tool: str
-    expected_args: Dict[str, Any]
+    expected_args: dict[str, Any]
     is_correct_tool: bool
     is_correct_args: bool
     duration_ms: float = 0.0
@@ -66,10 +64,10 @@ class TestCase:
     task_type: TaskType
     description: str
     input_message: str
-    expected_tools: List[str]              # 期望调用的工具列表 (按顺序)
-    expected_args_list: List[Dict]         # 期望的工具参数列表
-    expected_output_contains: List[str]    # 期望输出包含的关键词
-    tags: List[str] = field(default_factory=list)
+    expected_tools: list[str]              # 期望调用的工具列表 (按顺序)
+    expected_args_list: list[dict]         # 期望的工具参数列表
+    expected_output_contains: list[str]    # 期望输出包含的关键词
+    tags: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -80,8 +78,8 @@ class CaseResult:
     task_type: str
     result: str                            # EvalResult value
     total_duration_ms: float
-    tool_calls: List[Dict]                 # 工具调用记录
-    actual_tools_used: List[str]
+    tool_calls: list[dict]                 # 工具调用记录
+    actual_tools_used: list[str]
     correct_tools_count: int
     total_expected_tools: int
     correct_args_count: int
@@ -109,8 +107,8 @@ class EvalReport:
     avg_latency_ms: float                  # 平均延迟
     avg_react_rounds: float                # 平均 ReAct 轮数
     error_recovery_rate: float             # 错误恢复率
-    results_by_type: Dict[str, Dict]       # 按任务类型分组统计
-    case_results: List[Dict]               # 每个用例的详细结果
+    results_by_type: dict[str, dict]       # 按任务类型分组统计
+    case_results: list[dict]               # 每个用例的详细结果
     summary: str = ""                      # 总结文本
 
 
@@ -145,7 +143,7 @@ class AgentEvaluator:
         evaluator.save_report("/path/to/output")
     """
 
-    def __init__(self, agent_invoke_fn=None, cases: Optional[List[TestCase]] = None,
+    def __init__(self, agent_invoke_fn=None, cases: list[TestCase] | None = None,
                  use_mock: bool = False):
         """
         Args:
@@ -154,14 +152,14 @@ class AgentEvaluator:
             use_mock: 是否使用模拟模式
         """
         self.agent_invoke_fn = agent_invoke_fn
-        self.cases: List[TestCase] = cases or []
+        self.cases: list[TestCase] = cases or []
         self.use_mock = use_mock
-        self.results: List[CaseResult] = []
+        self.results: list[CaseResult] = []
 
     def add_case(self, case: TestCase):
         self.cases.append(case)
 
-    def add_cases(self, cases: List[TestCase]):
+    def add_cases(self, cases: list[TestCase]):
         self.cases.extend(cases)
 
     def run(self) -> EvalReport:
@@ -247,7 +245,7 @@ class AgentEvaluator:
             raw_output=raw_output[:500],
         )
 
-    def _check_tool_selection(self, case: TestCase, actual_tools: List[str]) -> int:
+    def _check_tool_selection(self, case: TestCase, actual_tools: list[str]) -> int:
         """检查工具选择是否正确"""
         correct = 0
         for expected in case.expected_tools:
@@ -258,7 +256,7 @@ class AgentEvaluator:
                     break
         return correct
 
-    def _check_tool_args(self, case: TestCase, tool_calls: List[Dict]) -> int:
+    def _check_tool_args(self, case: TestCase, tool_calls: list[dict]) -> int:
         """检查工具参数是否正确"""
         if not case.expected_args_list:
             return 0
@@ -388,7 +386,7 @@ class AgentEvaluator:
     def _print_summary(self, report: EvalReport):
         """打印评估摘要"""
         print(f"\n{'='*60}")
-        print(f"  评估结果摘要")
+        print("  评估结果摘要")
         print(f"{'='*60}")
         print(f"  任务完成率:       {report.task_completion_rate}%")
         print(f"  工具选择准确率:   {report.tool_selection_accuracy}%")
@@ -399,7 +397,7 @@ class AgentEvaluator:
         print(f"{'─'*60}")
 
         if report.results_by_type:
-            print(f"  按任务类型:")
+            print("  按任务类型:")
             for t, stats in report.results_by_type.items():
                 print(f"    {t:20s}  通过率 {stats['rate']:5.1f}%  "
                       f"({stats['pass']}/{stats['total']})  "
@@ -432,40 +430,40 @@ class AgentEvaluator:
     def _render_markdown(self, report: EvalReport) -> str:
         """渲染 Markdown 格式报告"""
         lines = [
-            f"# Agent 系统评估报告",
-            f"",
+            "# Agent 系统评估报告",
+            "",
             f"**评估时间**: {report.timestamp}",
             f"**评估 ID**: {report.run_id}",
             f"**测试用例数**: {report.total_cases}",
-            f"",
-            f"## 综合指标",
-            f"",
-            f"| 指标 | 数值 |",
-            f"|------|------|",
+            "",
+            "## 综合指标",
+            "",
+            "| 指标 | 数值 |",
+            "|------|------|",
             f"| 任务完成率 | {report.task_completion_rate}% |",
             f"| 工具选择准确率 | {report.tool_selection_accuracy}% |",
             f"| 工具参数正确率 | {report.tool_args_accuracy}% |",
             f"| 平均响应延迟 | {report.avg_latency_ms}ms |",
             f"| 平均 ReAct 轮数 | {report.avg_react_rounds} |",
             f"| 错误恢复率 | {report.error_recovery_rate}% |",
-            f"",
-            f"## 结果分布",
-            f"",
-            f"| 状态 | 数量 | 占比 |",
-            f"|------|------|------|",
+            "",
+            "## 结果分布",
+            "",
+            "| 状态 | 数量 | 占比 |",
+            "|------|------|------|",
             f"| 通过 | {report.passed} | {round(report.passed/report.total_cases*100,1) if report.total_cases else 0}% |",
             f"| 部分通过 | {report.partial} | {round(report.partial/report.total_cases*100,1) if report.total_cases else 0}% |",
             f"| 失败 | {report.failed} | {round(report.failed/report.total_cases*100,1) if report.total_cases else 0}% |",
             f"| 异常 | {report.errors} | {round(report.errors/report.total_cases*100,1) if report.total_cases else 0}% |",
-            f"",
+            "",
         ]
 
         if report.results_by_type:
             lines += [
-                f"## 分类型统计",
-                f"",
-                f"| 任务类型 | 通过率 | 平均延迟 | 用例数 |",
-                f"|---------|--------|---------|--------|",
+                "## 分类型统计",
+                "",
+                "| 任务类型 | 通过率 | 平均延迟 | 用例数 |",
+                "|---------|--------|---------|--------|",
             ]
             for t, stats in report.results_by_type.items():
                 lines.append(f"| {t} | {stats['rate']}% | {stats['avg_ms']}ms | {stats['total']} |")
@@ -473,8 +471,8 @@ class AgentEvaluator:
 
         # 每个用例的详细结果
         lines += [
-            f"## 用例详情",
-            f"",
+            "## 用例详情",
+            "",
         ]
         for cr in report.case_results:
             status_icon = {"pass": "✅", "fail": "❌", "partial": "◐️", "error": "⚠️"}
@@ -494,10 +492,10 @@ class AgentEvaluator:
             lines.append("")
 
         lines += [
-            f"## 总结",
-            f"",
+            "## 总结",
+            "",
             f"{report.summary}",
-            f"",
+            "",
         ]
 
         return "\n".join(lines)
@@ -545,4 +543,4 @@ if __name__ == "__main__":
     evaluator.add_cases(get_agent_eval_cases())
     report = evaluator.run()
     evaluator.save_report("./eval_output")
-    
+

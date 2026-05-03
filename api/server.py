@@ -1,22 +1,30 @@
 # api_server.py - 集成日志 + 健康检查（完整版）
-from dotenv import load_dotenv
-load_dotenv()
-
-import time
 import json
+import time
+
 import psutil
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse
+from langchain_core.messages import AIMessageChunk, HumanMessage
+from prometheus_client import make_asgi_app
 from pydantic import BaseModel
-from langchain_core.messages import HumanMessage, AIMessageChunk
-from core.logger import get_logger
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+
+load_dotenv()
+
+from core.config import settings  # noqa: E402
+from core.logger import get_logger  # noqa: E402
+from core.metrics import update_system_gauges  # noqa: E402
+from tools.security import SecurityMiddleware  # noqa: E402
 
 logger = get_logger("APIServer")
 
 # Phase 1: TraceChain integration
 try:
-    from core.trace_chain import TraceChain, span_context, SpanKind, SpanStatus
+    from core.trace_chain import SpanKind, SpanStatus, TraceChain, span_context
     _trace_chain = TraceChain(
         persist_dir='data/traces',
         max_memory=200,
@@ -37,12 +45,6 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"]
 )
 
-from prometheus_client import make_asgi_app
-from core.metrics import update_system_gauges
-from tools.security import SecurityMiddleware
-from core.config import settings
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
     SKIP_PATHS = {"/health", "/docs", "/openapi.json", "/health/detailed", "/metrics", "/metrics/"}
@@ -68,7 +70,8 @@ app.add_middleware(SecurityMiddleware)
 app.add_middleware(APIKeyMiddleware)
 
 # 集成健康检查模块
-from tools.health import health_check as _detailed_health_check
+from tools.health import health_check as _detailed_health_check  # noqa: E402
+
 
 class Question(BaseModel):
     question: str
@@ -95,7 +98,7 @@ async def ask(req: Question):
         )
 
     try:
-        from agent.core import get_react_agent, get_langfuse_handler
+        from agent.core import get_langfuse_handler, get_react_agent
         agent_app = get_react_agent()
         langfuse_handler = get_langfuse_handler(session_id=req.session_id)
 
@@ -164,7 +167,7 @@ async def ask_stream(req: Question):
 
     async def event_generator():
         try:
-            from agent.core import get_react_agent, get_langfuse_handler
+            from agent.core import get_langfuse_handler, get_react_agent
             agent_app = get_react_agent()
             langfuse_handler = get_langfuse_handler(session_id=req.session_id)
             config = {

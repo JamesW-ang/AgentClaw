@@ -41,16 +41,14 @@ AgentClaw Agent 评估模块 v1
     report = evaluator.evaluate()
 """
 
-import math
-import time
 import json
+import math
 import os
 import re
 import statistics
-from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, List, Optional, Tuple
+import time
 from collections import Counter, defaultdict
-
+from dataclasses import asdict, dataclass, field
 
 # ============================================================
 # 数据结构
@@ -60,7 +58,7 @@ from collections import Counter, defaultdict
 class RAGSample:
     """单条 RAG 评估样本"""
     question: str
-    contexts: List[str]
+    contexts: list[str]
     answer: str
     ground_truth: str = ""
     tool_name: str = "knowledge_search"
@@ -101,7 +99,7 @@ class ToolMetrics:
     selection_accuracy: float = 0.0
     total_calls: int = 0
     correct_calls: int = 0
-    per_tool_accuracy: Dict[str, float] = field(default_factory=dict)
+    per_tool_accuracy: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -123,10 +121,10 @@ class EvaluationReport:
     timestamp: float = field(default_factory=time.time)
     mode: str = "fast"
     sample_count: int = 0
-    rag: Optional[RAGMetrics] = None
-    tool: Optional[ToolMetrics] = None
-    latency: Optional[LatencyMetrics] = None
-    tool_latency: Dict[str, LatencyMetrics] = field(default_factory=dict)
+    rag: RAGMetrics | None = None
+    tool: ToolMetrics | None = None
+    latency: LatencyMetrics | None = None
+    tool_latency: dict[str, LatencyMetrics] = field(default_factory=dict)
     agent_success_rate: float = -1.0
     avg_reasoning_steps: float = -1.0
 
@@ -139,7 +137,7 @@ class TextSimilarity:
     """纯文本相似度计算, 无外部依赖"""
 
     @staticmethod
-    def tokenize(text: str) -> List[str]:
+    def tokenize(text: str) -> list[str]:
         """分词: 英文单词 + 中文字符 bigram"""
         words = re.findall(r'\w+', text.lower())
         for segment in re.findall(r'[\u4e00-\u9fff]+', text):
@@ -150,7 +148,7 @@ class TextSimilarity:
         return words
 
     @staticmethod
-    def jaccard(tokens_a: List[str], tokens_b: List[str]) -> float:
+    def jaccard(tokens_a: list[str], tokens_b: list[str]) -> float:
         """Jaccard 相似度"""
         set_a, set_b = set(tokens_a), set(tokens_b)
         if not set_a or not set_b:
@@ -158,7 +156,7 @@ class TextSimilarity:
         return len(set_a & set_b) / len(set_a | set_b)
 
     @staticmethod
-    def overlap_coefficient(tokens_a: List[str], tokens_b: List[str]) -> float:
+    def overlap_coefficient(tokens_a: list[str], tokens_b: list[str]) -> float:
         """重叠系数 (交集 / 较小集合)"""
         set_a, set_b = set(tokens_a), set(tokens_b)
         if not set_a or not set_b:
@@ -166,7 +164,7 @@ class TextSimilarity:
         return len(set_a & set_b) / min(len(set_a), len(set_b))
 
     @staticmethod
-    def bm25_score(query_tokens: List[str], doc_tokens: List[str],
+    def bm25_score(query_tokens: list[str], doc_tokens: list[str],
                    k1: float = 1.5, b: float = 0.75) -> float:
         """简化 BM25 评分"""
         if not query_tokens or not doc_tokens:
@@ -247,7 +245,7 @@ class LLMJudge:
         except Exception:
             return -1.0
 
-    def score_faithfulness(self, answer: str, contexts: List[str]) -> float:
+    def score_faithfulness(self, answer: str, contexts: list[str]) -> float:
         """评估回答是否忠于上下文 (0-1)"""
         ctx_text = "\n".join(f"[{i+1}] {c}" for i, c in enumerate(contexts))
         prompt = (
@@ -307,11 +305,11 @@ class AgentEvaluator:
         self.persist_dir = persist_dir
         os.makedirs(persist_dir, exist_ok=True)
 
-        self._rag_samples: List[RAGSample] = []
-        self._tool_samples: List[ToolCallSample] = []
-        self._latency_samples: List[E2ELatencySample] = []
+        self._rag_samples: list[RAGSample] = []
+        self._tool_samples: list[ToolCallSample] = []
+        self._latency_samples: list[E2ELatencySample] = []
 
-        self._llm_judge: Optional[LLMJudge] = None
+        self._llm_judge: LLMJudge | None = None
         if mode == "llm":
             try:
                 self._llm_judge = LLMJudge()
@@ -323,7 +321,7 @@ class AgentEvaluator:
     # 样本录入
     # ============================================================
 
-    def add_rag_sample(self, question: str, contexts: List[str],
+    def add_rag_sample(self, question: str, contexts: list[str],
                        answer: str, ground_truth: str = "",
                        tool_name: str = "knowledge_search"):
         """添加一条 RAG 评估样本"""
@@ -360,7 +358,7 @@ class AgentEvaluator:
 
     def load_from_file(self, file_path: str):
         """从 JSON 文件加载评估样本"""
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             data = json.load(f)
         for item in data.get("rag_samples", []):
             self.add_rag_sample(**item)
@@ -483,8 +481,8 @@ class AgentEvaluator:
         total = len(self._tool_samples)
         correct = sum(1 for s in self._tool_samples if s.actual_tool == s.expected_tool)
 
-        tool_correct: Dict[str, int] = defaultdict(int)
-        tool_total: Dict[str, int] = defaultdict(int)
+        tool_correct: dict[str, int] = defaultdict(int)
+        tool_total: dict[str, int] = defaultdict(int)
         for sample in self._tool_samples:
             tool_total[sample.actual_tool] += 1
             if sample.actual_tool == sample.expected_tool:
@@ -507,7 +505,7 @@ class AgentEvaluator:
     # ============================================================
 
     @staticmethod
-    def _percentile(data: List[float], p: float) -> float:
+    def _percentile(data: list[float], p: float) -> float:
         """计算百分位数"""
         if not data:
             return 0.0
@@ -519,7 +517,7 @@ class AgentEvaluator:
             return sorted_data[int(k)]
         return sorted_data[int(f)] * (c - k) + sorted_data[int(c)] * (k - f)
 
-    def _eval_latency(self, latencies: List[float]) -> LatencyMetrics:
+    def _eval_latency(self, latencies: list[float]) -> LatencyMetrics:
         """计算延迟分布指标"""
         if not latencies:
             return LatencyMetrics()
@@ -534,12 +532,12 @@ class AgentEvaluator:
             sample_count=len(latencies),
         )
 
-    def _eval_all_latency(self) -> Tuple[Optional[LatencyMetrics], Dict[str, LatencyMetrics]]:
+    def _eval_all_latency(self) -> tuple[LatencyMetrics | None, dict[str, LatencyMetrics]]:
         """评估所有延迟指标 (端到端 + 每个工具)"""
         e2e_latencies = [s.total_latency for s in self._latency_samples]
         e2e_metrics = self._eval_latency(e2e_latencies) if e2e_latencies else None
 
-        tool_latencies: Dict[str, List[float]] = defaultdict(list)
+        tool_latencies: dict[str, list[float]] = defaultdict(list)
         for sample in self._tool_samples:
             tool_latencies[sample.actual_tool].append(sample.latency)
 
@@ -611,14 +609,14 @@ class AgentEvaluator:
             if report.rag.answer_correctness >= 0:
                 print(f"  Answer Correctness:   {report.rag.answer_correctness:.3f}")
             else:
-                print(f"  Answer Correctness:   N/A (无 ground_truth)")
+                print("  Answer Correctness:   N/A (无 ground_truth)")
 
         if report.tool:
             print(f"\n[TOOL] 工具选择评估 ({report.tool.total_calls} 样本):")
             print(f"  Selection Accuracy:   {report.tool.selection_accuracy:.1%}")
             print(f"  正确/总数:            {report.tool.correct_calls}/{report.tool.total_calls}")
             if report.tool.per_tool_accuracy:
-                print(f"  各工具准确率:")
+                print("  各工具准确率:")
                 for tool, acc in sorted(report.tool.per_tool_accuracy.items(),
                                         key=lambda x: x[1], reverse=True):
                     print(f"    {tool}: {acc:.1%}")
@@ -632,12 +630,12 @@ class AgentEvaluator:
             print(f"  Min / Max:            {report.latency.min:.3f}s / {report.latency.max:.3f}s")
 
         if report.tool_latency:
-            print(f"\n[LATENCY] 各工具延迟:")
+            print("\n[LATENCY] 各工具延迟:")
             for tool_name, m in sorted(report.tool_latency.items()):
                 print(f"  {tool_name}: P50={m.p50:.3f}s  P95={m.p95:.3f}s  Mean={m.mean:.3f}s")
 
         if report.agent_success_rate >= 0:
-            print(f"\n[AGENT] 决策质量:")
+            print("\n[AGENT] 决策质量:")
             print(f"  任务成功率:           {report.agent_success_rate:.1%}")
         if report.avg_reasoning_steps >= 0:
             print(f"  平均推理步数:         {report.avg_reasoning_steps:.1f}")

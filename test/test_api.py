@@ -4,11 +4,11 @@
 
 import os
 import sys
-import json
 import time
-import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -51,8 +51,9 @@ class TestHealthEndpoint:
 
     @pytest.fixture
     def client(self):
-        from api.server import app
         from fastapi.testclient import TestClient
+
+        from api.server import app
         with TestClient(app) as c:
             yield c
 
@@ -93,8 +94,9 @@ class TestMetricsEndpoint:
 
     @pytest.fixture
     def client(self):
-        from api.server import app
         from fastapi.testclient import TestClient
+
+        from api.server import app
         with TestClient(app) as c:
             yield c
 
@@ -118,9 +120,10 @@ class TestAPIKeyMiddleware:
 
     @pytest.fixture
     def client(self):
-        from core.config import settings
-        from api.server import app
         from fastapi.testclient import TestClient
+
+        from api.server import app
+        from core.config import settings
         # Patch settings._values dict in-place (frozen dataclass, can't setattr)
         with patch.dict(settings._values, {'API_KEY': 'my-secret-key'}):
             with TestClient(app) as c:
@@ -175,8 +178,9 @@ class TestAskEndpoint:
     @pytest.fixture
     def client(self, mock_agent):
         with patch("agent.core.get_react_agent", return_value=mock_agent):
-            from api.server import app
             from fastapi.testclient import TestClient
+
+            from api.server import app
             with TestClient(app) as c:
                 yield c
 
@@ -223,8 +227,9 @@ class TestAskStreamEndpoint:
             for mod in list(sys.modules.keys()):
                 if mod.startswith("api.") or mod in ("api", "api.server"):
                     del sys.modules[mod]
-            from api.server import app
             from fastapi.testclient import TestClient
+
+            from api.server import app
             with TestClient(app) as c:
                 yield c
 

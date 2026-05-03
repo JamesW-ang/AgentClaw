@@ -7,18 +7,19 @@ v6 变更:
     - 可选启动自主学习系统
 """
 
-import sys
-import os
 import signal
-import threading
 import subprocess
+import sys
+import threading
 import time
 
 # Fail-Fast: 启动前验证配置
 from core.config import validate_on_startup
+
 validate_on_startup()
 
-from core.logger import get_logger
+from core.logger import get_logger  # noqa: E402
+
 logger = get_logger("main")
 
 # 子进程引用，用于优雅退出
@@ -29,7 +30,7 @@ def init_agent_core():
     """初始化 AgentClaw 核心（注册全部工具 + 三链联动）"""
     logger.info("初始化 AgentClaw 核心...")
     try:
-        from agent.core import init_all_tools, get_tool_summary, init_chains
+        from agent.core import get_tool_summary, init_all_tools, init_chains
         init_all_tools()
         summary = get_tool_summary()
         logger.info(f"工具初始化完成: {summary['total']} 个工具")

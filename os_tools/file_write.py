@@ -11,8 +11,6 @@
 
 import os
 import shutil
-import hashlib
-
 
 # 安全配置
 PATH_BLACKLIST = [
@@ -79,7 +77,6 @@ def file_write(path: str, content: str, mode: str = "write") -> dict:
     # ---------- 5. 执行写入 ----------
     try:
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-        write_mode = "a" if mode == "append" else "w"
         with open(abs_path, "w", encoding="utf-8") as f:
             if mode == "append":
                 f.write(content)

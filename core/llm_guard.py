@@ -27,17 +27,17 @@
 ═══════════════════════════════════════════════════════════════════════════
 """
 
-import time
-import json
-import os
 import hashlib
+import json
 import logging
+import os
 import threading
-import traceback
-from enum import Enum
-from dataclasses import dataclass, field
-from typing import Any, Callable, Optional, List, Dict, Tuple
+import time
 from collections import OrderedDict
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
+
 from core.metrics import observe_llm_call, observe_llm_error
 
 logger = logging.getLogger(__name__)
@@ -66,7 +66,7 @@ class LLMErrorType(Enum):
         )
 
     @property
-    def retry_after_hint(self) -> Optional[float]:
+    def retry_after_hint(self) -> float | None:
         """建议等待时间 (秒)"""
         hints = {
             LLMErrorType.RATE_LIMIT: 5.0,    # 限流默认等 5 秒
@@ -95,7 +95,7 @@ class LLMResult:
     content: str = ""
     stream: Any = None              # 流式响应迭代器 (如果启用)
     model: str = ""
-    raw_response: Any = None  
+    raw_response: Any = None
     latency_ms: float = 0.0
     tokens_in: int = 0
     tokens_out: int = 0
@@ -184,7 +184,7 @@ class LLMErrorClassifier:
     ]
 
     @classmethod
-    def classify(cls, exc: Exception) -> Tuple[LLMErrorType, Optional[float]]:
+    def classify(cls, exc: Exception) -> tuple[LLMErrorType, float | None]:
         """
         分类异常
 
@@ -220,7 +220,7 @@ class LLMErrorClassifier:
         return LLMErrorType.UNKNOWN, None
 
     @classmethod
-    def _extract_retry_after(cls, exc, exc_str: str) -> Optional[float]:
+    def _extract_retry_after(cls, exc, exc_str: str) -> float | None:
         """从异常中提取 Retry-After (秒)"""
         # 检查 response header
         if hasattr(exc, 'response') and exc.response is not None:
@@ -266,7 +266,7 @@ class LLMCache:
         self._hits = 0
         self._misses = 0
 
-    def get(self, messages: list, model: str = "") -> Optional[str]:
+    def get(self, messages: list, model: str = "") -> str | None:
         """查询缓存"""
         key = self._make_key(messages, model)
         with self._lock:
@@ -322,7 +322,7 @@ class LLMCache:
 class FallbackConfig:
     """降级链配置"""
     # 备用模型 (同 provider 不同模型)
-    backup_models: List[str] = field(default_factory=list)
+    backup_models: list[str] = field(default_factory=list)
 
     # 是否启用缓存降级
     enable_cache: bool = True
@@ -382,7 +382,7 @@ class LLMGuard:
     def __init__(
         self,
         default_model: str = "",
-        backup_models: List[str] = None,
+        backup_models: list[str] = None,
         api_key: str = "",
         base_url: str = "",
         retry_policy: LLMRetryPolicy = None,
@@ -663,7 +663,7 @@ class LLMGuard:
             # 开始 span (如果有 trace)
             span = None
             if trace:
-                from core.trace_chain import span_context, SpanKind
+                from core.trace_chain import SpanKind, span_context
                 span_name = f"llm.{model}.attempt{attempt}"
                 span = span_context(trace, span_name, SpanKind.LLM,
                                     attributes={
@@ -792,7 +792,7 @@ class LLMGuard:
 
     # ── 缓存降级 ──
 
-    def _try_cache_fallback(self, messages, model, trace) -> Optional[LLMResult]:
+    def _try_cache_fallback(self, messages, model, trace) -> LLMResult | None:
         """尝试从缓存获取结果"""
         # 优先尝试完整匹配
         cached = self.cache.get(messages, model)
@@ -961,7 +961,7 @@ class LLMGuard:
 # ═══ 8. 便捷函数 ═══
 
 # 全局实例 (延迟初始化)
-_global_guard: Optional[LLMGuard] = None
+_global_guard: LLMGuard | None = None
 _guard_lock = threading.Lock()
 
 
