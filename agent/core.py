@@ -134,6 +134,9 @@ def init_all_tools():
     import tools.xml_config
     tools.xml_config.register_xml_config_tools()
 
+    # 6. 文本统计工具
+    import tools.text_stats
+
     # 打印注册结果
     from tools.registry import registry
     tools = registry.list_tools()

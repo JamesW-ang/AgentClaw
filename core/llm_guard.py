@@ -95,6 +95,7 @@ class LLMResult:
     content: str = ""
     stream: Any = None              # 流式响应迭代器 (如果启用)
     model: str = ""
+    raw_response: Any = None  
     latency_ms: float = 0.0
     tokens_in: int = 0
     tokens_out: int = 0
@@ -731,6 +732,7 @@ class LLMGuard:
                     content=response.choices[0].message.content if response.choices else "",
                     stream=None,
                     model=model,
+                    raw_response=response,
                     latency_ms=latency_ms,
                     tokens_in=getattr(getattr(response, 'usage', None), 'prompt_tokens', 0) or 0,
                     tokens_out=getattr(getattr(response, 'usage', None), 'completion_tokens', 0) or 0,

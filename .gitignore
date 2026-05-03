@@ -74,4 +74,6 @@ yolov5su.pt
 
 # Runtime data files
 *.db
+*.db-shm
+*.db-wal
 data/traces/

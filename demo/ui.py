@@ -90,7 +90,7 @@ def get_react_app():
     if _react_app is None:
         from agent.core import get_react_agent
         # 确保工具已注册
-        import tools.builtin  # noqa: F401
+        import tools.builtin as builtin_tools  # noqa: F401
         try:
             import tools.vision  # noqa: F401
         except ImportError:
@@ -113,7 +113,7 @@ def get_react_app():
 _rag = None
 def get_rag():
     """获取 RAG 引擎（复用 builtin_tools 的共享实例）"""
-    import tools.builtin
+    import tools.builtin as builtin_tools
     return builtin_tools._get_rag_engine()
 
 # --- 3. Multi-Agent (多场景工具增强) ---
@@ -229,7 +229,7 @@ def get_multi_app(scene="code_review"):
     # --- Agent 工具（通过 tool_registry 统一调度，复用已注册工具）---
     from tools.registry import registry
     # 确保工具已注册
-    import tools.builtin  # 触发 @registry.register 装饰器注册
+    import tools.builtin as builtin_tools  # 触发 @registry.register 装饰器注册
     import os_tools.file_write  # 触发 os_tools 注册
 
     # registry → lc_tool 的桥接函数
@@ -244,8 +244,31 @@ def get_multi_app(scene="code_review"):
             **{param_name: (str, param_desc)},
         )
 
+        _valid_params = set(_input_schema.model_fields.keys())
+
         def _run(**kwargs) -> str:
             try:
+                # 动态补齐 registry 工具声明了但 LLM 没传的参数
+                tool_info = registry._tools.get(registry_name)
+                if tool_info:
+                    for param in tool_info.parameters:
+                        if param.name not in kwargs:
+                            if param.default is not None:
+                                kwargs[param.name] = param.default
+                            else:
+                                # 无默认值的必填参数：按类型填占位符
+                                if param.type in ("int", "integer", "number"):
+                                    kwargs[param.name] = 0
+                                elif param.type == "boolean":
+                                    kwargs[param.name] = False
+                                else:
+                                    kwargs[param.name] = ""
+                    # 过滤掉既不在 schema 也不在 registry 参数列表中的幻觉参数
+                    registry_params = {p.name for p in tool_info.parameters}
+                    allowed = _valid_params | registry_params
+                    kwargs = {k: v for k, v in kwargs.items() if k in allowed}
+                else:
+                    kwargs = {k: v for k, v in kwargs.items() if k in _valid_params}
                 result = registry.execute(registry_name, kwargs)
                 if result.get("success"):
                     return str(result.get("result", ""))[:3000]
@@ -300,11 +323,38 @@ def get_multi_app(scene="code_review"):
             for round_i in range(5):
                 try:
                     logger.info(f"[多Agent] [{role_name}] 第{round_i+1}轮LLM调用...")
-                    response = llm_with_tools.invoke(messages)
+                    # 清理历史消息中的 DSML 标签，防止污染
+                    import re as _re
+                    from langchain_core.messages import ToolMessage as _TM, AIMessage as _AM
+                    clean_msgs = []
+                    for m in messages:
+                        if isinstance(m, _TM):
+                            # ToolMessage 必须保留 tool_call_id，否则序列化失败
+                            _c = _re.sub(r'<|｜DSML|｜[^>]*>', '', m.content) if isinstance(m.content, str) else m.content
+                            clean_msgs.append(_TM(content=_c, tool_call_id=m.tool_call_id))
+                        elif isinstance(m, _AM) and m.tool_calls:
+                            # AIMessage 带工具调用时必须保留 tool_calls，只清理 content
+                            _c = _re.sub(r'<|｜DSML|｜[^>]*>', '', m.content) if isinstance(m.content, str) else m.content
+                            clean_msgs.append(_AM(content=_c, tool_calls=m.tool_calls))
+                        elif hasattr(m, 'content') and isinstance(m.content, str):
+                            _cleaned = _re.sub(r'<|｜DSML|｜[^>]*>', '', m.content)
+                            clean_msgs.append(type(m)(content=_cleaned))
+                        else:
+                            clean_msgs.append(m)
+                    response = llm_with_tools.invoke(clean_msgs)
                 except Exception as e:
                     logger.error(f"[多Agent] [{role_name}] LLM调用失败: {e}")
                     response = None
                     break
+
+                # 检查 response 本身是否包含 DSML 标签（模型异常输出）
+                # 注意：DeepSeek 使用全角字符 ＜｜｜，需同时匹配半角和全角
+                _dsml_pattern = r'<｜｜DSML｜｜|<\|\|DSML<\|\|'
+                if hasattr(response, 'content') and response.content and _re.search(_dsml_pattern, str(response.content)):
+                    logger.warning(f"[多Agent] [{role_name}] 模型返回了 DSML 标签而非标准 tool_calls，尝试重新生成")
+                    messages.append(response)
+                    messages.append(SystemMessage(content="请使用标准工具调用格式，不要使用任何特殊标签格式。直接调用工具即可。"))
+                    continue
 
                 if not response.tool_calls:
                     logger.info(f"[多Agent] [{role_name}] 第{round_i+1}轮无工具调用，直接输出 (content长度={len(response.content or '')})")
@@ -344,6 +394,9 @@ def get_multi_app(scene="code_review"):
                 final_text = f"Agent 响应失败（请检查API Key和网络连接）"
             else:
                 final_text = response.content if isinstance(response.content, str) else str(response.content)
+                # 最终清洗：移除任何残留的 DSML 标签
+                if final_text:
+                    final_text = _re.sub(r'<｜｜DSML｜｜[^>]*>', '', final_text)
                 if not final_text.strip():
                     final_text = "（工具调用完成，但未生成文字总结）"
 
@@ -399,7 +452,7 @@ RAG_MAX_FILE_SIZE = 5 * 1024 * 1024
 def rag_upload(files):
     if not files:
         return "未选择文件", rag_get_stats()
-    import tools.builtin
+    import tools.builtin as builtin_tools
     added = 0; msgs = []
     for f in files:
         try:
@@ -423,14 +476,14 @@ def rag_upload(files):
 def rag_add_text(text):
     if not text or not text.strip():
         return "请输入文本内容", rag_get_stats()
-    import tools.builtin
+    import tools.builtin as builtin_tools
     count = builtin_tools.rag_add_text_to_shared(text.strip(), source="手动输入")
     return f"已添加 {count} 个文档块", rag_get_stats()
 
 def rag_search(query, top_k):
     if not query or not query.strip():
         return "请输入查询内容"
-    import tools.builtin
+    import tools.builtin as builtin_tools
     rag = get_rag()
     if rag.doc_count == 0:
         return "知识库为空，请先上传文档或添加文本。"
@@ -443,12 +496,12 @@ def rag_search(query, top_k):
     return "\n\n".join(parts)
 
 def rag_clear():
-    import tools.builtin
+    import tools.builtin as builtin_tools
     builtin_tools.rag_clear_shared()
     return "知识库已清空", rag_get_stats()
 
 def rag_get_stats():
-    import tools.builtin
+    import tools.builtin as builtin_tools
     stats = builtin_tools.rag_get_shared_stats()
     return f"文档块数: {stats['doc_count']} | 分块大小: {stats['chunk_size']} | 来源: {len(stats['sources'])} 个"
 
@@ -458,7 +511,7 @@ def vision_analyze(image, question, output_type):
     if image is None:
         return "请上传一张图片"
     try:
-        import tools.builtin   # noqa: F401  确保内置工具已注册
+        import tools.builtin as builtin_tools
         import tools.vision     # noqa: F401  注册 vision_analyze 到 registry
         from tools.registry import registry
 
@@ -498,7 +551,7 @@ def image_generate(prompt, size):
     if not prompt or not prompt.strip():
         return None, "请输入提示词"
     try:
-        import tools.builtin  # noqa: F401
+        import tools.builtin as builtin_tools  # noqa: F401
         import tools.image_gen  # noqa: F401  注册 image_generate
         from tools.registry import registry
 

@@ -1,8 +1,14 @@
 """
 GuardedChatModel - LangChain ChatModel wrapper for LLMGuard
 让 LLMGuard 的容错能力无缝接入 LangGraph create_react_agent
+
+v6.1.4 修复:
+    1. convert_to_openai_tool: LangChain Pydantic 工具 -> OpenAI dict
+    2. tool_calls 转发: LLM 返回 tool_calls 时正确传给 LangGraph ReAct
+    3. json.loads: tc.function.arguments 是字符串，需 parse 为 dict
 """
 import logging
+import json
 from typing import Any, Callable, Dict, List, Optional, Union, Sequence, Generator
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.messages import BaseMessage, AIMessage, AIMessageChunk
@@ -10,34 +16,45 @@ from langchain_core.outputs import ChatResult, ChatGeneration, ChatGenerationChu
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import RunnableBinding
 from langchain_core.tools import BaseTool
+from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import Field
 
 logger = logging.getLogger(__name__)
 
 
+def _convert_lc_tool_calls_to_openai(tool_calls: List[Dict]) -> List[Dict]:
+    """Convert LangChain tool_calls format to OpenAI API format.
+
+    LangChain: [{"name": "...", "args": {...}, "id": "...", "type": "tool_call"}]
+    OpenAI:    [{"id": "...", "type": "function", "function": {"name": "...", "arguments": "{...}"}}]
+    """
+    converted = []
+    for tc in tool_calls:
+        fn_name = tc.get("name", "")
+        fn_args = tc.get("args", {})
+        if not isinstance(fn_args, str):
+            fn_args = json.dumps(fn_args, ensure_ascii=False)
+        converted.append({
+            "id": tc.get("id", ""),
+            "type": "function",
+            "function": {"name": fn_name, "arguments": fn_args},
+        })
+    return converted
+
+
 class GuardedChatModel(BaseChatModel):
     """
     LangChain ChatModel that delegates to LLMGuard for fault-tolerant LLM calls.
-    
-    Usage:
-        from core.guarded_chat_model import GuardedChatModel
-        from core.llm_guard import LLMGuard, get_llm_guard
-        
-        guard = get_llm_guard(default_model="deepseek-chat", backup_models=["deepseek-reasoner"])
-        model = GuardedChatModel(guard=guard, temperature=0)
-        
-        # Use with LangGraph
-        agent = create_react_agent(model=model, tools=tools, ...)
     """
-    
+
     guard: Any = Field(description="LLMGuard instance")
     temperature: float = 0.0
     max_tokens: int = 2000
-    
+
     @property
     def _llm_type(self) -> str:
         return "guarded-chat-model"
-    
+
     @property
     def _identifying_params(self) -> Dict[str, Any]:
         return {"temperature": self.temperature, "max_tokens": self.max_tokens}
@@ -49,10 +66,6 @@ class GuardedChatModel(BaseChatModel):
         tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
         **kwargs: Any,
     ) -> RunnableBinding:
-        """
-        Bind tools to the model. Returns a RunnableBinding that stores tools
-        and passes them to _generate / _stream via kwargs.
-        """
         kwargs["tools"] = tools
         if tool_choice is not None:
             kwargs["tool_choice"] = tool_choice
@@ -66,20 +79,17 @@ class GuardedChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         """Generate a response using LLMGuard"""
-        # Extract LangGraph/function-calling parameters from kwargs
         tools = kwargs.pop("tools", None)
         tool_choice = kwargs.pop("tool_choice", None)
         response_format = kwargs.pop("response_format", None)
 
-        # Convert LangChain messages to OpenAI format
-        openai_messages = []
-        for msg in messages:
-            role = "system" if msg.type == "system" else (
-                "assistant" if msg.type == "ai" else "user"
-            )
-            openai_messages.append({"role": role, "content": msg.content})
+        # 修复1：LangChain Pydantic 工具 -> OpenAI dict 格式
+        if tools is not None:
+            tools = [convert_to_openai_tool(t) for t in tools]
 
-        # Call LLMGuard with tool definition forwarding
+        # Convert LangChain messages to OpenAI format
+        openai_messages = self._messages_to_openai(messages)
+
         result = self.guard.chat(
             messages=openai_messages,
             temperature=self.temperature,
@@ -92,13 +102,29 @@ class GuardedChatModel(BaseChatModel):
         )
 
         if result.is_error:
-            # Return the fallback message from LLMGuard
             content = result.recovery_hint or result.error_message or "处理失败，请重试"
             logger.warning(f"[GuardedChatModel] LLMGuard returned error: {result.error_type}")
+            message = AIMessage(content=content)
         else:
             content = result.content
+            tool_calls = None
+            raw = getattr(result, 'raw_response', None)
+            if raw and hasattr(raw, 'choices') and raw.choices:
+                ai_msg = raw.choices[0].message
+                if hasattr(ai_msg, 'tool_calls') and ai_msg.tool_calls:
+                    tool_calls = [
+                        {
+                            "name": tc.function.name,
+                            "args": json.loads(tc.function.arguments),
+                            "id": tc.id,
+                        }
+                        for tc in ai_msg.tool_calls
+                    ]
+            if tool_calls:
+                message = AIMessage(content=content, tool_calls=tool_calls)
+            else:
+                message = AIMessage(content=content)
 
-        message = AIMessage(content=content)
         generation = ChatGeneration(message=message)
         return ChatResult(generations=[generation], llm_output={
             "model": result.model,
@@ -108,7 +134,26 @@ class GuardedChatModel(BaseChatModel):
             "fallback_level": result.fallback_level,
             "attempts": result.attempts,
         })
-    
+
+    @staticmethod
+    def _messages_to_openai(messages: List[BaseMessage]) -> List[Dict[str, Any]]:
+        """Convert LangChain messages to OpenAI API format, preserving tool_call_id."""
+        openai_messages = []
+        for msg in messages:
+            if msg.type == "system":
+                openai_messages.append({"role": "system", "content": msg.content})
+            elif msg.type == "tool":
+                tc_id = getattr(msg, 'tool_call_id', None) or ""
+                openai_messages.append({"role": "tool", "content": msg.content, "tool_call_id": tc_id})
+            elif msg.type == "ai":
+                entry = {"role": "assistant", "content": msg.content}
+                if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                    entry["tool_calls"] = _convert_lc_tool_calls_to_openai(msg.tool_calls)
+                openai_messages.append(entry)
+            else:
+                openai_messages.append({"role": "user", "content": msg.content})
+        return openai_messages
+
     def _stream(
         self,
         messages: List[BaseMessage],
@@ -117,20 +162,15 @@ class GuardedChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> Generator[ChatGenerationChunk, None, None]:
         """Stream a response using LLMGuard with streaming enabled."""
-        # Extract LangGraph/function-calling parameters from kwargs
         tools = kwargs.pop("tools", None)
         tool_choice = kwargs.pop("tool_choice", None)
         response_format = kwargs.pop("response_format", None)
 
-        # Convert LangChain messages to OpenAI format
-        openai_messages = []
-        for msg in messages:
-            role = "system" if msg.type == "system" else (
-                "assistant" if msg.type == "ai" else "user"
-            )
-            openai_messages.append({"role": role, "content": msg.content})
+        if tools is not None:
+            tools = [convert_to_openai_tool(t) for t in tools]
 
-        # Call LLMGuard with stream=True
+        openai_messages = self._messages_to_openai(messages)
+
         result = self.guard.chat(
             messages=openai_messages,
             temperature=self.temperature,
@@ -143,14 +183,12 @@ class GuardedChatModel(BaseChatModel):
         )
 
         if result.is_error:
-            # Fallback/error case: yield a single chunk with the error message
             content = result.recovery_hint or result.error_message or "处理失败，请重试"
             yield ChatGenerationChunk(
                 message=AIMessageChunk(content=content)
             )
             return
 
-        # Iterate the raw OpenAI stream
         stream_iter = result.stream
         if stream_iter is None:
             return
@@ -162,10 +200,8 @@ class GuardedChatModel(BaseChatModel):
 
                 delta = chunk.choices[0].delta
 
-                # Content delta (text tokens)
                 content = delta.content or ""
 
-                # Tool call chunks (incremental function calling)
                 tool_call_chunks = []
                 if delta.tool_calls:
                     for tc in delta.tool_calls:
@@ -178,7 +214,6 @@ class GuardedChatModel(BaseChatModel):
                             }
                         )
 
-                # Only yield if there's actual content or tool calls
                 if not content and not tool_call_chunks:
                     continue
 
@@ -200,5 +235,5 @@ class GuardedChatModel(BaseChatModel):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> ChatResult:
-        """Async generate - delegates to sync _generate (LLMGuard handles async internally)"""
+        """Async generate - delegates to sync _generate"""
         return self._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
