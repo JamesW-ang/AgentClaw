@@ -18,9 +18,6 @@ AgentClaw v6.1 — 多模态智能路由器
   - dataclasses (内置)
   - re (内置)
 """
-import re
-import logging
-from typing import Optional
 from dataclasses import dataclass
 from enum import Enum
 
@@ -45,7 +42,7 @@ class VisionMode(Enum):
 @dataclass
 class RouteResult:
     """路由结果数据类
-    
+
     Attributes:
         mode: 推荐的视觉分析模式
         prompt: 生成的提示词

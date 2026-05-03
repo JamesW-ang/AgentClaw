@@ -5,17 +5,16 @@
 # 用于与 DeepSeek LLM 交互，支持函数调用和工具执行
 
 import json
-from openai import OpenAI
-from tools.registry import registry, ToolInfo, ToolParameter
-from core.config import settings
-
 
 # ==================== ReAct 响应解析 ====================
 # 从 LLM 返回的 JSON 中提取 action 或 final_answer
 # 用于 ReAct 循环的"思考-行动-观察"控制流
-
-import json
 from typing import NamedTuple
+
+from openai import OpenAI
+
+from core.config import settings
+from tools.registry import ToolInfo, registry
 
 
 class ParsedResponse(NamedTuple):
@@ -64,7 +63,7 @@ def parse_response(content: str) -> ParsedResponse:
 class ReActDispatcher:
     """
     ReAct 模式调度器类
-    
+
     该类负责：
     1. 维护工具注册表
     2. 与 DeepSeek LLM 交互

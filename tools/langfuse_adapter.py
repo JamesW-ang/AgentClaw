@@ -22,10 +22,9 @@ LangFuse 适配器 — 与现有 TraceChain 并存的 LLM 可观测性方案
 import os
 import time
 import uuid
-import json
-from datetime import datetime
-from typing import Optional, Dict, Any, List
 from contextlib import contextmanager
+from datetime import datetime
+from typing import Any
 
 
 class LangFuseConfig:
@@ -127,8 +126,8 @@ class LangFuseTracer:
         return handler
 
     @contextmanager
-    def trace(self, name: str, user_id: str = "", tags: Optional[List[str]] = None,
-              metadata: Optional[Dict[str, Any]] = None):
+    def trace(self, name: str, user_id: str = "", tags: list[str] | None = None,
+              metadata: dict[str, Any] | None = None):
         """
         手动创建一个 Trace 上下文
 
@@ -157,8 +156,8 @@ class LangFuseTracer:
         self._langfuse.flush()
 
     @contextmanager
-    def span(self, trace, name: str, input: Optional[Dict] = None,
-             metadata: Optional[Dict] = None):
+    def span(self, trace, name: str, input: dict | None = None,
+             metadata: dict | None = None):
         """
         在 Trace 内创建一个 Span
 
@@ -214,7 +213,7 @@ class LangFuseTracer:
 
     def generate_langfuse_gen_observation(self, trace, name: str,
                                           model: str, input_data: Any,
-                                          output_data: Any, usage: Dict):
+                                          output_data: Any, usage: dict):
         """
         手动记录一个 LLM Generation (用于非 LangGraph 集成的场景)
 

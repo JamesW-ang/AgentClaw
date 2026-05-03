@@ -3,14 +3,14 @@ AgentClaw 生产级工具注册中心 - 修复版
 修复: execute() 改为同步方法，支持 **kwargs 传参
 """
 
-import time
 import asyncio
-import inspect
-from typing import Any, Callable, Dict, List, Optional, Tuple, get_type_hints
+import json
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-import json
-import traceback
+from typing import Any, Optional
+
 from core.logger import get_logger
 from core.metrics import observe_tool_call
 
@@ -51,7 +51,7 @@ class ToolParameter:
     description: str
     required: bool = True
     default: Any = None
-    enum: Optional[List[str]] = None
+    enum: list[str] | None = None
 
 
 @dataclass
@@ -61,8 +61,8 @@ class ToolInfo:
     description: str
     category: ToolCategory
     func: Callable
-    parameters: List[ToolParameter] = field(default_factory=list)
-    examples: List[str] = field(default_factory=list)
+    parameters: list[ToolParameter] = field(default_factory=list)
+    examples: list[str] = field(default_factory=list)
     timeout: int = 30
     status: ToolStatus = ToolStatus.READY
     call_count: int = 0
@@ -87,10 +87,10 @@ class ToolInfo:
 class ToolRegistry:
     """
     AgentClaw 工具注册中心
-    
+
     用法:
         registry = ToolRegistry()
-        
+
         # 方式1: 装饰器注册
         @registry.register(
             name="my_tool",
@@ -100,10 +100,10 @@ class ToolRegistry:
         )
         def my_tool(query: str) -> dict:
             return {"result": query}
-        
+
         # 方式2: 手动注册
         registry.register_func(my_func, name="tool_name", ...)
-        
+
         # 执行
         result = registry.execute("my_tool", query="hello")
     """
@@ -119,8 +119,8 @@ class ToolRegistry:
     def __init__(self):
         if self._initialized:
             return
-        self._tools: Dict[str, ToolInfo] = {}
-        self._categories: Dict[ToolCategory, List[str]] = {}
+        self._tools: dict[str, ToolInfo] = {}
+        self._categories: dict[ToolCategory, list[str]] = {}
         self._error_chain = None  # Phase 1: ErrorChain 实例
         self._initialized = True
         logger.info("ToolRegistry 初始化完成")
@@ -136,16 +136,16 @@ class ToolRegistry:
 
     def register(
         self,
-        name: Optional[str] = None,
+        name: str | None = None,
         description: str = "",
-        parameters: Optional[list] = None,
+        parameters: list | None = None,
         category: ToolCategory = ToolCategory.CUSTOM,
-        examples: Optional[List[str]] = None,
+        examples: list[str] | None = None,
         timeout: int = 30
     ):
         """
         装饰器: 注册工具函数
-        
+
         Args:
             name: 工具名称（默认使用函数名）
             description: 工具描述
@@ -156,7 +156,7 @@ class ToolRegistry:
         """
         def decorator(func: Callable) -> Callable:
             tool_name = name or func.__name__
-            
+
             # 解析参数列表（兼容字符串列表和字典列表两种格式）
             tool_params = []
             if parameters:
@@ -181,7 +181,7 @@ class ToolRegistry:
                         ))
                     else:
                         logger.warning(f"忽略未知格式的参数定义: {p}")
-            
+
             tool_info = ToolInfo(
                 name=tool_name,
                 description=description,
@@ -191,28 +191,28 @@ class ToolRegistry:
                 examples=examples or [],
                 timeout=timeout,
             )
-            
+
             self._tools[tool_name] = tool_info
-            
+
             # 分类索引
             if category not in self._categories:
                 self._categories[category] = []
             if tool_name not in self._categories[category]:
                 self._categories[category].append(tool_name)
-            
+
             logger.info(f"注册工具: [{category.value}] {tool_name}")
             return func
-        
+
         return decorator
 
     def register_func(
         self,
         func: Callable,
-        name: Optional[str] = None,
+        name: str | None = None,
         description: str = "",
-        parameters: Optional[list] = None,
+        parameters: list | None = None,
         category: ToolCategory = ToolCategory.CUSTOM,
-        examples: Optional[List[str]] = None,
+        examples: list[str] | None = None,
         timeout: int = 30
     ) -> None:
         """手动注册工具函数（非装饰器方式）"""
@@ -241,7 +241,7 @@ class ToolRegistry:
     # 参数校验
     # ----------------------------------------------------------
 
-    def _validate_args(self, tool_name: str, kwargs: dict) -> Optional[str]:
+    def _validate_args(self, tool_name: str, kwargs: dict) -> str | None:
         """校验工具参数是否合法
 
         检查埋藏在 ToolParameter 元数据中的约束:
@@ -314,17 +314,17 @@ class ToolRegistry:
     def execute(self, tool_name: str, args: dict = None, **kwargs) -> dict:
         """
         同步执行工具，兼容两种调用格式：
-        
+
         格式1（字典）: registry.execute("web_search", {"query": "xxx"})
         格式2（关键字）: registry.execute("web_search", query="xxx")
-        
+
         集成速率限制：通过 core.rate_limiter.TokenBucket 对所有工具调用限流。
-        
+
         Args:
             tool_name: 工具名称
             args: 参数字典（位置参数方式传入时使用）
             **kwargs: 传递给工具函数的关键字参数
-        
+
         Returns:
             dict: {"success": bool, "result": Any, "error": str|None}
         """
@@ -332,16 +332,16 @@ class ToolRegistry:
         if isinstance(args, dict):
             kwargs.update(args)
         # 如果 args 不是字典也不是 None，忽略（防御性处理）
-        
+
         if tool_name not in self._tools:
             return {
                 "success": False,
                 "result": None,
                 "error": f"工具 '{tool_name}' 未注册。可用工具: {list(self._tools.keys())}"
             }
-        
+
         tool_info = self._tools[tool_name]
-        
+
         if tool_info.status == ToolStatus.DISABLED:
             return {
                 "success": False,
@@ -372,7 +372,7 @@ class ToolRegistry:
                 }
         except Exception:
             pass  # rate_limiter 不可用时跳过限流
-        
+
         tool_info.call_count += 1
         start_time = time.time()
 
@@ -465,22 +465,22 @@ class ToolRegistry:
     # 查询方法
     # ----------------------------------------------------------
 
-    def get_tool(self, tool_name: str) -> Optional[ToolInfo]:
+    def get_tool(self, tool_name: str) -> ToolInfo | None:
         """获取工具信息"""
         return self._tools.get(tool_name)
 
-    def list_tools(self) -> List[str]:
+    def list_tools(self) -> list[str]:
         """列出所有已注册工具名称"""
         return list(self._tools.keys())
 
-    def list_tools_by_category(self, category: ToolCategory) -> List[str]:
+    def list_tools_by_category(self, category: ToolCategory) -> list[str]:
         """按分类列出工具"""
         return self._categories.get(category, [])
 
-    def get_tools_for_llm(self) -> List[dict]:
+    def get_tools_for_llm(self) -> list[dict]:
         """
         获取 OpenAI function calling 格式的工具列表
-        
+
         Returns:
             [
                 {
@@ -514,7 +514,7 @@ class ToolRegistry:
                 properties[param.name] = prop
                 if param.required:
                     required.append(param.name)
-            
+
             func_schema = {
                 "name": name,
                 "description": info.description,
@@ -524,15 +524,15 @@ class ToolRegistry:
                     "required": required
                 }
             }
-            
+
             tools_schema.append({
                 "type": "function",
                 "function": func_schema
             })
-        
+
         return tools_schema
 
-    def get_tool_stats(self) -> Dict[str, dict]:
+    def get_tool_stats(self) -> dict[str, dict]:
         """获取所有工具的统计信息"""
         stats = {}
         for name, info in self._tools.items():
@@ -591,11 +591,11 @@ if __name__ == "__main__":
     print("=" * 60)
     print("ToolRegistry 生产级自测")
     print("=" * 60)
-    
+
     # 重置单例
     ToolRegistry.reset()
     reg = ToolRegistry()
-    
+
     # 1. 测试装饰器注册
     @reg.register(
         name="add",
@@ -608,7 +608,7 @@ if __name__ == "__main__":
     )
     def add(a: float, b: float) -> dict:
         return {"result": a + b}
-    
+
     # 2. 测试手动注册
     reg.register_func(
         lambda name="World": {"message": f"Hello, {name}!"},
@@ -616,37 +616,37 @@ if __name__ == "__main__":
         description="打招呼",
         category=ToolCategory.CUSTOM
     )
-    
+
     # 3. 列出工具
     print(f"\n已注册工具: {reg.list_tools()}")
-    
+
     # 4. 测试同步执行 + **kwargs 传参
     print("\n--- 测试 execute() 同步调用 ---")
     result = reg.execute("add", a=3, b=5)
     print(f"add(a=3, b=5) => {result}")
     assert result["success"] is True
     assert result["result"]["result"] == 8.0
-    
+
     result = reg.execute("greet", name="AgentClaw")
     print(f"greet(name='AgentClaw') => {result}")
     assert result["success"] is True
-    
+
     # 5. 测试错误处理
     result = reg.execute("nonexistent")
     print(f"nonexistent => {result}")
     assert result["success"] is False
-    
+
     # 6. 测试 LLM schema 输出
     print("\n--- LLM Tools Schema ---")
     schema = reg.get_tools_for_llm()
     print(json.dumps(schema, indent=2, ensure_ascii=False))
-    
+
     # 7. 测试统计信息
     print("\n--- 工具统计 ---")
     stats = reg.get_tool_stats()
     for name, stat in stats.items():
         print(f"  {name}: {stat}")
-    
+
     print("\n" + "=" * 60)
     print("所有测试通过!")
     print("=" * 60)

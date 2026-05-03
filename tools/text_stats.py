@@ -1,6 +1,6 @@
 """文本统计工具 — 统计字符数、单词数、行数"""
-from tools.registry import registry, ToolCategory
 from core.logger import get_logger
+from tools.registry import ToolCategory, registry
 
 logger = get_logger("text_stats_tool")
 

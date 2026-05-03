@@ -17,13 +17,12 @@ AgentClaw 多模态视觉工具 - 生产级完整版
     3. Base64: "data:image/jpeg;base64,..."
 """
 
-import os
 import base64
 import json
+import os
 import time
-import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 # 自动加载 .env 文件（项目根目录优先，当前目录次之）
 try:
@@ -39,10 +38,10 @@ try:
 except ImportError:
     pass  # 没有 python-dotenv 也继续运行
 
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
 
 from core.logger import get_logger
+
 logger = get_logger("VisionTool")
 
 # ============================================================
@@ -81,17 +80,17 @@ class DetectionObject:
     """检测到的对象"""
     label: str         # 对象名称
     confidence: float  # 置信度 0-1
-    bbox: Optional[Dict[str, int]] = None  # 边界框 {"x":, "y":, "w":, "h":}
+    bbox: dict[str, int] | None = None  # 边界框 {"x":, "y":, "w":, "h":}
 
 
 @dataclass
 class VisionResult:
     """视觉分析结果"""
     description: str                   # 图片描述
-    objects: List[DetectionObject]     # 检测到的对象
+    objects: list[DetectionObject]     # 检测到的对象
     confidence: float                  # 整体置信度
-    metadata: Dict[str, Any]           # 额外元数据
-    raw_response: Optional[dict]       # API 原始响应
+    metadata: dict[str, Any]           # 额外元数据
+    raw_response: dict | None       # API 原始响应
     model: str = ""                    # 使用的模型
     latency: float = 0.0               # 耗时
 
@@ -103,13 +102,13 @@ class VisionResult:
 class MultiModalVisionTool:
     """
     AgentClaw 多模态视觉工具
-    
+
     功能:
         - 单图分析（描述、对象检测、OCR）
         - 多图对比分析
         - 区域缩放分析
         - 视频帧分析
-    
+
     用法:
         tool = MultiModalVisionTool()
         result = tool.analyze("/path/to/image.jpg")
@@ -118,9 +117,9 @@ class MultiModalVisionTool:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        model: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
         max_tokens: int = 4096,
         timeout: int = 60,
     ):
@@ -171,13 +170,13 @@ class MultiModalVisionTool:
     # 图片预处理
     # ----------------------------------------------------------
 
-    def _load_image(self, source: str) -> Tuple[str, str]:
+    def _load_image(self, source: str) -> tuple[str, str]:
         """
         加载图片，返回 (media_type, base64_data)
-        
+
         Args:
             source: 本地路径 / URL / base64
-        
+
         Returns:
             (media_type, base64_data)
         """
@@ -186,38 +185,38 @@ class MultiModalVisionTool:
             parts = source.split(";base64,", 1)
             media_type = parts[0].replace("data:", "")
             return media_type, parts[1]
-        
+
         # 情况2: URL
         if source.startswith("http://") or source.startswith("https://"):
             return self._download_image(source)
-        
+
         # 情况3: 本地文件
         if os.path.isfile(source):
             return self._encode_local_image(source)
-        
+
         # 情况4: 纯 base64 字符串
         try:
             decoded = base64.b64decode(source)
             return "image/jpeg", base64.b64encode(decoded).decode("utf-8")
         except Exception:
             pass
-        
+
         raise ValueError(f"无法识别的图片来源: {source[:100]}")
 
-    def _encode_local_image(self, file_path: str) -> Tuple[str, str]:
+    def _encode_local_image(self, file_path: str) -> tuple[str, str]:
         """编码本地图片为 base64"""
         path = Path(file_path)
-        
+
         # 检查格式
         ext = path.suffix.lower()
         if ext not in SUPPORTED_IMAGE_FORMATS:
             raise ValueError(f"不支持的图片格式: {ext}，支持: {SUPPORTED_IMAGE_FORMATS}")
-        
+
         # 检查大小
         file_size = path.stat().st_size
         if file_size > MAX_IMAGE_SIZE:
             raise ValueError(f"图片过大: {file_size / 1024 / 1024:.1f}MB（最大 {MAX_IMAGE_SIZE / 1024 / 1024:.0f}MB）")
-        
+
         # MIME 类型
         mime_map = {
             ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
@@ -225,24 +224,24 @@ class MultiModalVisionTool:
             ".webp": "image/webp", ".bmp": "image/bmp",
         }
         media_type = mime_map.get(ext, "image/jpeg")
-        
+
         with open(path, "rb") as f:
             data = base64.b64encode(f.read()).decode("utf-8")
-        
+
         logger.info(f"图片编码成功: {path.name} ({file_size / 1024:.1f}KB)")
         return media_type, data
 
-    def _download_image(self, url: str) -> Tuple[str, str]:
+    def _download_image(self, url: str) -> tuple[str, str]:
         """下载网络图片"""
         import requests
         resp = requests.get(url, timeout=15, headers={
             "User-Agent": "Mozilla/5.0 AgentClaw/1.0"
         })
         resp.raise_for_status()
-        
+
         content_type = resp.headers.get("Content-Type", "image/jpeg")
         media_type = content_type.split(";")[0].strip()
-        
+
         data = base64.b64encode(resp.content).decode("utf-8")
         logger.info(f"图片下载成功: {url[:60]}... ({len(resp.content) / 1024:.1f}KB)")
         return media_type, data
@@ -273,29 +272,30 @@ class MultiModalVisionTool:
             image_url_entry["detail"] = "high"
         return {"type": "image_url", "image_url": image_url_entry}
 
-    def _crop_image_b64(self, source: str, region: ImageRegion) -> Tuple[str, str]:
+    def _crop_image_b64(self, source: str, region: ImageRegion) -> tuple[str, str]:
         """裁剪图片区域，返回 (media_type, base64_data)"""
         try:
-            from PIL import Image
             import io
-            
+
+            from PIL import Image
+
             media_type, b64_data = self._load_image(source)
             img_data = base64.b64decode(b64_data)
             img = Image.open(io.BytesIO(img_data))
-            
+
             # 裁剪
             cropped = img.crop((region.x, region.y, region.x + region.width, region.y + region.height))
-            
+
             # 保存到内存
             buf = io.BytesIO()
             output_format = "JPEG" if media_type in ("image/jpeg",) else "PNG"
             cropped.save(buf, format=output_format)
             result_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
             out_media = "image/jpeg" if output_format == "JPEG" else "image/png"
-            
+
             logger.info(f"裁剪区域 [{region.name}] {region.width}x{region.height}px")
             return out_media, result_b64
-            
+
         except ImportError:
             # 没有 PIL，返回原图并提示
             logger.warning("PIL 未安装，无法裁剪图片。安装: pip install Pillow")
@@ -307,18 +307,18 @@ class MultiModalVisionTool:
 
     def _call_vision_api(
         self,
-        messages: List[dict],
+        messages: list[dict],
         temperature: float = 0.3,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
     ) -> dict:
         """
         调用 OpenAI 兼容的视觉 API
-        
+
         Returns:
             {"content": str, "usage": dict, "model": str}
         """
         client = self._get_client()
-        
+
         start_time = time.time()
         # 构建请求参数（GLM 与 OpenAI 差异处理）
         kwargs = {
@@ -336,19 +336,19 @@ class MultiModalVisionTool:
         logger.info(f"API 请求: model={self.model}, max_tokens={kwargs.get('max_tokens')}, is_glm={self._is_glm_model}")
         response = client.chat.completions.create(**kwargs)
         latency = time.time() - start_time
-        
+
         self._call_count += 1
         self._total_latency += latency
-        
+
         content = response.choices[0].message.content or ""
         usage = {
             "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
             "completion_tokens": response.usage.completion_tokens if response.usage else 0,
             "total_tokens": response.usage.total_tokens if response.usage else 0,
         }
-        
+
         logger.info(f"API 调用完成 ({latency:.2f}s, {usage['total_tokens']} tokens)")
-        
+
         return {
             "content": content,
             "usage": usage,
@@ -366,13 +366,13 @@ class MultiModalVisionTool:
                 return json.loads(json_match.group(1))
             except json.JSONDecodeError:
                 pass
-        
+
         # 尝试直接解析
         try:
             return json.loads(text)
         except json.JSONDecodeError:
             pass
-        
+
         # 尝试提取花括号内容
         brace_match = re.search(r'\{.*\}', text, re.DOTALL)
         if brace_match:
@@ -380,7 +380,7 @@ class MultiModalVisionTool:
                 return json.loads(brace_match.group())
             except json.JSONDecodeError:
                 pass
-        
+
         return {"raw": text}
 
     # ----------------------------------------------------------
@@ -390,23 +390,23 @@ class MultiModalVisionTool:
     def analyze(
         self,
         image_source: str,
-        prompt: Optional[str] = None,
+        prompt: str | None = None,
         detail_level: str = "high",
     ) -> VisionResult:
         """
         分析单张图片
-        
+
         Args:
             image_source: 图片路径/URL/base64
             prompt: 自定义分析提示词（默认自动生成）
             detail_level: "high"（详细）或 "low"（快速）
-        
+
         Returns:
             VisionResult
         """
         if not self.is_configured:
             return self._mock_analyze(image_source)
-        
+
         if prompt is None:
             prompt = (
                 "请详细分析这张图片，用中文回答。请包括以下内容：\n"
@@ -425,12 +425,12 @@ class MultiModalVisionTool:
                 '  "confidence": 0.9\n'
                 '}'
             )
-        
+
         start_time = time.time()
-        
+
         try:
             image_content = self._build_image_content(image_source, detail=detail_level)
-            
+
             messages = [
                 {
                     "role": "system",
@@ -441,10 +441,10 @@ class MultiModalVisionTool:
                     "content": [image_content, {"type": "text", "text": prompt}]
                 }
             ]
-            
+
             api_result = self._call_vision_api(messages)
             parsed = self._parse_json_response(api_result["content"])
-            
+
             # 构建 DetectionObject 列表
             objects = []
             for obj in parsed.get("objects", []):
@@ -453,7 +453,7 @@ class MultiModalVisionTool:
                     confidence=float(obj.get("confidence", 0.0)),
                     bbox=obj.get("bbox"),
                 ))
-            
+
             return VisionResult(
                 description=parsed.get("description", api_result["content"]),
                 objects=objects,
@@ -467,7 +467,7 @@ class MultiModalVisionTool:
                 model=api_result["model"],
                 latency=round(time.time() - start_time, 3),
             )
-            
+
         except Exception as e:
             logger.error(f"图片分析失败: {e}")
             return VisionResult(
@@ -482,22 +482,22 @@ class MultiModalVisionTool:
 
     def compare(
         self,
-        image_sources: List[str],
-        prompt: Optional[str] = None,
+        image_sources: list[str],
+        prompt: str | None = None,
     ) -> VisionResult:
         """
         对比分析多张图片
-        
+
         Args:
             image_sources: 图片路径/URL 列表
             prompt: 自定义对比提示词
-        
+
         Returns:
             VisionResult
         """
         if not self.is_configured:
             return self._mock_compare(image_sources)
-        
+
         if prompt is None:
             prompt = (
                 f"请对比这 {len(image_sources)} 张图片，用中文回答：\n"
@@ -513,9 +513,9 @@ class MultiModalVisionTool:
                 '  "summary": "总体评价"\n'
                 '}'
             )
-        
+
         start_time = time.time()
-        
+
         try:
             content_parts = []
             for i, src in enumerate(image_sources, 1):
@@ -525,7 +525,7 @@ class MultiModalVisionTool:
                     "text": f"[图片 {i}]"
                 })
             content_parts.append({"type": "text", "text": prompt})
-            
+
             messages = [
                 {
                     "role": "system",
@@ -536,14 +536,14 @@ class MultiModalVisionTool:
                     "content": content_parts
                 }
             ]
-            
+
             api_result = self._call_vision_api(messages)
             parsed = self._parse_json_response(api_result["content"])
-            
+
             description = parsed.get("summary", api_result["content"])
             if parsed.get("differences"):
                 description = "区别: " + "; ".join(parsed["differences"][:5]) + "\n" + description
-            
+
             return VisionResult(
                 description=description,
                 objects=[],
@@ -557,7 +557,7 @@ class MultiModalVisionTool:
                 model=api_result["model"],
                 latency=round(time.time() - start_time, 3),
             )
-            
+
         except Exception as e:
             logger.error(f"图片对比失败: {e}")
             return VisionResult(
@@ -573,31 +573,31 @@ class MultiModalVisionTool:
     def analyze_regions(
         self,
         image_source: str,
-        regions: List[ImageRegion],
-        prompt: Optional[str] = None,
-    ) -> Dict[str, VisionResult]:
+        regions: list[ImageRegion],
+        prompt: str | None = None,
+    ) -> dict[str, VisionResult]:
         """
         分区域分析图片（缩放查看细节）
-        
+
         Args:
             image_source: 图片路径/URL
             regions: 区域定义列表
             prompt: 自定义分析提示词
-        
+
         Returns:
             {区域名称: VisionResult}
         """
         if prompt is None:
             prompt = "请详细描述这个区域的细节内容，包括文字、图标、颜色、布局等。"
-        
+
         start_time = time.time()
         results = {}
-        
+
         for region in regions:
             try:
                 # 裁剪区域
                 media_type, b64_data = self._crop_image_b64(image_source, region)
-                
+
                 if self.is_configured:
                     # 真实 API 分析
                     image_content = self._build_image_content_b64(media_type, b64_data)
@@ -609,7 +609,7 @@ class MultiModalVisionTool:
                         ]}
                     ]
                     api_result = self._call_vision_api(messages)
-                    
+
                     results[region.name] = VisionResult(
                         description=api_result["content"],
                         objects=[],
@@ -626,7 +626,7 @@ class MultiModalVisionTool:
                         metadata={"region": {"x": region.x, "y": region.y, "w": region.width, "h": region.height}},
                         raw_response=None,
                     )
-                    
+
             except Exception as e:
                 results[region.name] = VisionResult(
                     description=f"分析失败: {e}",
@@ -635,29 +635,29 @@ class MultiModalVisionTool:
                     metadata={"error": str(e)},
                     raw_response=None,
                 )
-        
+
         logger.info(f"区域分析完成: {len(results)}/{len(regions)} 个区域 ({time.time() - start_time:.2f}s)")
         return results
 
     def ocr(
         self,
         image_source: str,
-        languages: Optional[List[str]] = None,
+        languages: list[str] | None = None,
     ) -> VisionResult:
         """
         OCR 文字识别
-        
+
         Args:
             image_source: 图片路径/URL
             languages: 语言提示（如 ["中文", "英文"]）
-        
+
         Returns:
             VisionResult（description 中包含识别的文字）
         """
         lang_hint = ""
         if languages:
             lang_hint = f"图片中可能包含以下语言: {', '.join(languages)}。\n"
-        
+
         prompt = (
             f"{lang_hint}"
             "请仔细识别这张图片中的所有文字内容。\n"
@@ -671,9 +671,9 @@ class MultiModalVisionTool:
             '  "confidence": 0.95\n'
             '}'
         )
-        
+
         result = self.analyze(image_source, prompt=prompt)
-        
+
         # 如果 metadata 里有 parsed 数据，提取文字
         if result.raw_response:
             parsed = self._parse_json_response(result.raw_response["content"])
@@ -681,7 +681,7 @@ class MultiModalVisionTool:
                 result.description = parsed["full_text"]
                 result.metadata["blocks"] = parsed.get("blocks", [])
                 result.metadata["languages"] = parsed.get("languages", [])
-        
+
         return result
 
     def analyze_video_frame(
@@ -692,12 +692,12 @@ class MultiModalVisionTool:
     ) -> VisionResult:
         """
         分析视频帧
-        
+
         Args:
             frame_source: 帧图片路径/URL
             frame_index: 帧序号
             context: 上下文描述（如视频主题）
-        
+
         Returns:
             VisionResult
         """
@@ -726,7 +726,7 @@ class MultiModalVisionTool:
             model="mock",
         )
 
-    def _mock_compare(self, sources: List[str]) -> VisionResult:
+    def _mock_compare(self, sources: list[str]) -> VisionResult:
         """Mock 多图对比"""
         return VisionResult(
             description=f"[Mock] 对比 {len(sources)} 张图片（未配置 API Key）",
@@ -761,7 +761,7 @@ def create_vision_tool_instance() -> MultiModalVisionTool:
     return MultiModalVisionTool()
 
 # 全局实例
-_vision_tool: Optional[MultiModalVisionTool] = None
+_vision_tool: MultiModalVisionTool | None = None
 
 def get_vision_tool() -> MultiModalVisionTool:
     """获取全局视觉工具实例"""
@@ -776,8 +776,8 @@ def get_vision_tool() -> MultiModalVisionTool:
 # ============================================================
 
 try:
-    from tools.registry import registry, ToolCategory
-    
+    from tools.registry import ToolCategory, registry
+
     def _vision_analyze(image_path: str, prompt: str = "") -> dict:
         """分析图片"""
         tool = get_vision_tool()
@@ -788,7 +788,7 @@ try:
             "confidence": result.confidence,
             "latency": result.latency,
         }
-    
+
     def _vision_ocr(image_path: str, languages: str = "中文,英文") -> dict:
         """OCR 识别"""
         tool = get_vision_tool()
@@ -798,7 +798,7 @@ try:
             "confidence": result.confidence,
             "blocks": result.metadata.get("blocks", []),
         }
-    
+
     def _vision_compare(image_paths: str, prompt: str = "") -> dict:
         """对比多张图片"""
         tool = get_vision_tool()
@@ -809,30 +809,30 @@ try:
             "differences": result.metadata.get("differences", []),
             "similarities": result.metadata.get("similarities", []),
         }
-    
+
     registry.register_func(
         _vision_analyze,
         name="vision_analyze",
         description="分析图片内容，返回描述、检测对象和置信度。支持本地文件和URL。",
         category=ToolCategory.CUSTOM,
     )
-    
+
     registry.register_func(
         _vision_ocr,
         name="vision_ocr",
         description="OCR 文字识别，从图片中提取文字内容。",
         category=ToolCategory.CUSTOM,
     )
-    
+
     registry.register_func(
         _vision_compare,
         name="vision_compare",
         description="对比多张图片的差异（图片路径用逗号分隔）。",
         category=ToolCategory.CUSTOM,
     )
-    
+
     logger.info("视觉工具已注册到 AgentClaw ToolRegistry")
-    
+
 except ImportError:
     logger.info("tool_registry 未找到，视觉工具以独立模式运行（不注册到 AgentClaw）")
 
@@ -845,17 +845,17 @@ if __name__ == "__main__":
     print("=" * 60)
     print("AgentClaw 多模态视觉工具 - 生产级测试")
     print("=" * 60)
-    
+
     tool = MultiModalVisionTool()
-    
+
     # 显示配置状态
     stats = tool.get_stats()
-    print(f"\n配置状态:")
+    print("\n配置状态:")
     print(f"  API Key: {'已配置 ✅' if stats['configured'] else '未配置 ⚠️'}")
     print(f"  模型: {stats['model']}")
     print(f"  Base URL: {stats['base_url']}")
     print(f"  模式: {'真实 API' if stats['configured'] else 'Mock 模拟'}")
-    
+
     if not stats['configured']:
         print("\n⚠️  未检测到 OPENAI_API_KEY 环境变量")
         print("   以下测试将使用 Mock 模拟数据")
@@ -863,13 +863,13 @@ if __name__ == "__main__":
         print("   export OPENAI_API_KEY='sk-your-key'")
         print("   export OPENAI_BASE_URL='https://api.openai.com/v1'  # 可选")
         print("   export VISION_MODEL='gpt-4o'                        # 可选")
-    
+
     # ----------------------------------------------------------
     # 测试 1: 单图分析
     # ----------------------------------------------------------
     print("\n" + "-" * 40)
     print("测试 1: 单图分析")
-    
+
     # 用 AI 生成一张测试图片
     test_image = "/tmp/agentclaw_test_scene.png"
     if not os.path.exists(test_image):
@@ -884,7 +884,7 @@ if __name__ == "__main__":
                 "-o", test_image, "-s", "1024x1024"
             ], capture_output=True, text=True, timeout=120)
             if result.returncode != 0:
-                print(f"  图片生成失败，使用 Mock 模式")
+                print("  图片生成失败，使用 Mock 模式")
                 test_image = None
         except FileNotFoundError:
             print("  z-ai-generate 未找到，跳过真实图片测试")
@@ -892,7 +892,7 @@ if __name__ == "__main__":
         except subprocess.TimeoutExpired:
             print("  图片生成超时，跳过真实图片测试")
             test_image = None
-    
+
     if test_image and os.path.exists(test_image):
         print(f"  分析图片: {test_image}")
         result = tool.analyze(test_image)
@@ -905,13 +905,13 @@ if __name__ == "__main__":
     else:
         result = tool.analyze("test_image.jpg")
         print(f"  [Mock] {result.description}")
-    
+
     # ----------------------------------------------------------
     # 测试 2: OCR
     # ----------------------------------------------------------
     print("\n" + "-" * 40)
     print("测试 2: OCR 文字识别")
-    
+
     test_ocr_image = "/tmp/agentclaw_test_text.png"
     if not os.path.exists(test_ocr_image):
         try:
@@ -925,7 +925,7 @@ if __name__ == "__main__":
                 test_ocr_image = None
         except (FileNotFoundError, subprocess.TimeoutExpired):
             test_ocr_image = None
-    
+
     if test_ocr_image and os.path.exists(test_ocr_image):
         result = tool.ocr(test_ocr_image)
         print(f"  识别文字: {result.description[:200]}")
@@ -933,27 +933,27 @@ if __name__ == "__main__":
     else:
         result = tool.ocr("test_text.jpg")
         print(f"  [Mock] {result.description}")
-    
+
     # ----------------------------------------------------------
     # 测试 3: 多图对比
     # ----------------------------------------------------------
     print("\n" + "-" * 40)
     print("测试 3: 多图对比")
-    
+
     result = tool.compare(["image_a.jpg", "image_b.jpg"])
     print(f"  结果: {result.description[:200]}")
-    
+
     # ----------------------------------------------------------
     # 测试 4: 区域分析
     # ----------------------------------------------------------
     print("\n" + "-" * 40)
     print("测试 4: 区域缩放分析")
-    
+
     regions = [
         ImageRegion(name="左上角", x=0, y=0, width=400, height=400),
         ImageRegion(name="右下角", x=624, y=624, width=400, height=400),
     ]
-    
+
     if test_image and os.path.exists(test_image):
         results = tool.analyze_regions(test_image, regions)
         for name, r in results.items():
@@ -963,7 +963,7 @@ if __name__ == "__main__":
         for name, r in results.items():
             status = "失败" if r.metadata.get("error") else "Mock"
             print(f"  [{name}]: {status}")
-    
+
     # ----------------------------------------------------------
     # 测试 5: 工具统计
     # ----------------------------------------------------------
@@ -972,7 +972,7 @@ if __name__ == "__main__":
     stats = tool.get_stats()
     print(f"  总调用: {stats['call_count']} 次")
     print(f"  平均延迟: {stats['avg_latency']}")
-    
+
     # ----------------------------------------------------------
     # 测试 6: ToolRegistry 集成
     # ----------------------------------------------------------
@@ -982,7 +982,7 @@ if __name__ == "__main__":
         print("ToolRegistry 集成:")
         vision_tools = [t for t in reg.list_tools() if "vision" in t]
         print(f"  已注册视觉工具: {vision_tools}")
-        
+
         if vision_tools:
             schema = reg.get_tools_for_llm()
             for s in schema:
@@ -990,14 +990,14 @@ if __name__ == "__main__":
                     print(f"    - {s['function']['name']}: {s['function']['description'][:50]}")
     except ImportError:
         pass
-    
+
     # ----------------------------------------------------------
     # 清理
     # ----------------------------------------------------------
     for f in ["/tmp/agentclaw_test_scene.png", "/tmp/agentclaw_test_text.png"]:
         if os.path.exists(f):
             os.remove(f)
-    
+
     print("\n" + "=" * 60)
     print("测试完成!")
     if stats['configured']:

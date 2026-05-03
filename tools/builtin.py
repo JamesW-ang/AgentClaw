@@ -4,24 +4,20 @@ AgentClaw 内置工具集 - 生产级完整版
 兼容两种调用风格: execute("tool", {"k":"v"}) 和 execute("tool", k="v")
 """
 
+import ast
+import io
+import math
 import os
 import re
-import ast
-import json
-import math
-import time
 import subprocess
-import tempfile
-import io
 import sys
-from typing import Any, Dict, List, Optional
-
-# 导入工具注册中心
-from tools.registry import registry, ToolCategory
 
 # v6: 统一配置
 from core.config import settings
 from core.logger import get_logger
+
+# 导入工具注册中心
+from tools.registry import ToolCategory, registry
 
 logger = get_logger("builtin_tools")
 
@@ -41,7 +37,7 @@ logger = get_logger("builtin_tools")
 )
 def web_search(query: str, num_results: int = 5, language: str = "zh-CN") -> dict:
     """搜索互联网，三级降级策略"""
-    
+
     # 第一级：SerpAPI（需配置 SERPAPI_KEY 环境变量）
     serpapi_key = settings.SERPAPI_KEY
     if serpapi_key:
@@ -62,9 +58,9 @@ def web_search(query: str, num_results: int = 5, language: str = "zh-CN") -> dic
                     "snippet": r.get("snippet", ""),
                 })
             return {"count": len(items), "results": items, "source": "serpapi"}
-        except Exception as e:
+        except Exception:
             pass  # 降级到下一级
-    
+
     # 第二级：DuckDuckGo HTML（免费，无需API Key）
     try:
         import requests
@@ -77,7 +73,7 @@ def web_search(query: str, num_results: int = 5, language: str = "zh-CN") -> dic
             timeout=10
         )
         resp.raise_for_status()
-        
+
         # 解析 DuckDuckGo HTML 结果
         items = []
         # 提取搜索结果块
@@ -97,12 +93,12 @@ def web_search(query: str, num_results: int = 5, language: str = "zh-CN") -> dic
                     "url": clean_url,
                     "snippet": clean_snippet,
                 })
-        
+
         if items:
             return {"count": len(items), "results": items, "source": "duckduckgo"}
-    except Exception as e:
+    except Exception:
         pass  # 降级到下一级
-    
+
     # 第三级：返回友好提示
     return {
         "count": 0,
@@ -140,14 +136,14 @@ SAFE_NAMES = {"__builtins__": {}}
 )
 def calculator(expression: str) -> dict:
     """安全数学计算，基于 AST 解析"""
-    
+
     # 预处理：替换中文符号
     expr = expression.replace("×", "*").replace("÷", "/").replace("（", "(").replace("）", ")")
-    
+
     try:
         # AST 安全解析
         tree = ast.parse(expr, mode="eval")
-        
+
         # 安全检查：只允许数字运算、常量名和数学函数调用
         for node in ast.walk(tree):
             if isinstance(node, (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Constant,
@@ -157,11 +153,11 @@ def calculator(expression: str) -> dict:
                 continue
             # 禁止其他任何节点类型（如属性访问、导入等）
             raise ValueError(f"禁止的操作: {type(node).__name__}")
-        
+
         # 编译并执行
         code = compile(tree, "<calculator>", "eval")
         result = eval(code, {**SAFE_NAMES, **SAFE_FUNCTIONS})  # noqa: S307
-        
+
         return {
             "expression": expression,
             "result": result,
@@ -210,20 +206,20 @@ FILE_BLACKLIST = [
 )
 def file_read(file_path: str, encoding: str = "utf-8", max_lines: int = 500) -> dict:
     """安全读取文件内容"""
-    
+
     # 规范化路径
     abs_path = os.path.abspath(file_path)
-    
+
     # 安全检查1：路径白名单
     allowed = any(abs_path.startswith(prefix) for prefix in FILE_WHITELIST_PREFIX)
     if not allowed:
         raise PermissionError(f"路径不在白名单范围内: {abs_path}")
-    
+
     # 安全检查2：敏感文件黑名单
     for blocked in FILE_BLACKLIST:
         if blocked in abs_path:
             raise PermissionError(f"禁止读取敏感文件: 包含 '{blocked}'")
-    
+
     # 安全检查3：文件扩展名
     allowed_exts = {".txt", ".md", ".json", ".csv", ".py", ".js", ".html", ".css",
                     ".log", ".yaml", ".yml", ".xml", ".ts", ".tsx", ".jsx", ".toml",
@@ -231,25 +227,25 @@ def file_read(file_path: str, encoding: str = "utf-8", max_lines: int = 500) -> 
     _, ext = os.path.splitext(abs_path)
     if ext.lower() not in allowed_exts:
         raise PermissionError(f"不支持的文件格式: {ext}")
-    
+
     # 检查文件是否存在
     if not os.path.isfile(abs_path):
         return {"error": f"文件不存在: {abs_path}"}
-    
+
     # 检查文件大小
     file_size = os.path.getsize(abs_path)
     if file_size > FILE_MAX_SIZE:
         return {"error": f"文件过大: {file_size / 1024 / 1024:.1f}MB（最大 {FILE_MAX_SIZE / 1024 / 1024:.0f}MB）"}
-    
+
     try:
-        with open(abs_path, "r", encoding=encoding, errors="replace") as f:
+        with open(abs_path, encoding=encoding, errors="replace") as f:
             lines = []
             for i, line in enumerate(f):
                 if i >= max_lines:
                     lines.append(f"\n... (已截断，共 {i} 行，只显示前 {max_lines} 行)")
                     break
                 lines.append(line.rstrip("\n"))
-        
+
         content = "\n".join(lines)
         return {
             "file_path": abs_path,
@@ -311,20 +307,20 @@ DANGEROUS_PATTERNS = [
 )
 def run_command(command: str, timeout: int = 30, workdir: str = None) -> dict:
     """安全执行系统命令"""
-    
+
     # 提取基础命令名
     base_cmd = command.strip().split()[0] if command.strip() else ""
     cmd_name = os.path.basename(base_cmd)
-    
+
     # 安全检查1：命令白名单
     if cmd_name not in COMMAND_WHITELIST:
         raise PermissionError(f"命令 '{cmd_name}' 不在白名单中")
-    
+
     # 安全检查2：危险模式检测
     for pattern in DANGEROUS_PATTERNS:
         if re.search(pattern, command, re.IGNORECASE):
             raise PermissionError(f"检测到危险操作模式: {pattern}")
-    
+
     try:
         result = subprocess.run(
             command,
@@ -335,7 +331,7 @@ def run_command(command: str, timeout: int = 30, workdir: str = None) -> dict:
             cwd=workdir,
             env={**os.environ, "TERM": "dumb"}  # 禁用 ANSI 转义
         )
-        
+
         return {
             "command": command,
             "exit_code": result.returncode,
@@ -364,11 +360,11 @@ def run_command(command: str, timeout: int = 30, workdir: str = None) -> dict:
 )
 def code_execute(code: str, timeout: int = 10) -> dict:
     """沙箱执行 Python 代码"""
-    
+
     # 检查代码长度
     if len(code) > 10000:
         return {"error": "代码过长（最大 10000 字符）"}
-    
+
     # 检查危险操作
     dangerous_keywords = [
         "import os", "import sys", "import subprocess",
@@ -380,7 +376,7 @@ def code_execute(code: str, timeout: int = 10) -> dict:
     for kw in dangerous_keywords:
         if kw.lower() in code_lower:
             return {"error": f"禁止使用: {kw}"}
-    
+
     # 沙箱执行环境
     sandbox_globals = {
         "__builtins__": {
@@ -396,48 +392,48 @@ def code_execute(code: str, timeout: int = 10) -> dict:
             "True": True, "False": False, "None": None,
         }
     }
-    
+
     # 重定向 stdout 捕获 print 输出
     old_stdout = sys.stdout
     captured = io.StringIO()
     sys.stdout = captured
-    
+
     try:
         # 编译检查
         tree = ast.parse(code, mode="exec")
-        
+
         # 额外 AST 检查：禁止 import 语句
         for node in ast.walk(tree):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 return {"error": "禁止 import 语句（仅允许内置数学函数）"}
-        
+
         code_obj = compile(tree, "<sandbox>", "exec")
-        
+
         # 在临时线程中执行（支持超时）
         exec_result = {"timed_out": False}
-        
+
         def _run():
             try:
                 exec(code_obj, sandbox_globals)  # noqa: S102
             except Exception as e:
                 exec_result["error"] = str(e)
-        
+
         import threading
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()
         thread.join(timeout=timeout)
-        
+
         if thread.is_alive():
             return {"error": f"代码执行超时（{timeout}秒）", "output": captured.getvalue()}
-        
+
         output = captured.getvalue()
-        
+
         result = {"output": output}
         if "error" in exec_result:
             result["error"] = exec_result["error"]
-        
+
         return result
-        
+
     except SyntaxError as e:
         return {"error": f"语法错误: {e}", "output": captured.getvalue()}
     except Exception as e:
@@ -582,6 +578,7 @@ registry.register_func(
 # ============================================================
 
 import threading
+
 from tools.searcher import RAGEngine
 
 # 延迟初始化 RAG 引擎
@@ -639,8 +636,8 @@ def _add_to_chroma(file_path_or_text: str, source_type: str = "file") -> int:
     with _chroma_lock:
         try:
             if source_type == "file" and os.path.isfile(file_path_or_text):
-                from langchain_community.document_loaders import TextLoader
                 from langchain.text_splitter import RecursiveCharacterTextSplitter
+                from langchain_community.document_loaders import TextLoader
 
                 loader = TextLoader(file_path_or_text, encoding="utf-8")
                 documents = loader.load()
@@ -809,7 +806,7 @@ def rag_get_shared_stats():
 try:
     from os_tools.browser_tool import BrowserTool
 
-    _browser: Optional[BrowserTool] = None
+    _browser: BrowserTool | None = None
 
 
     def _get_browser() -> BrowserTool:
@@ -882,7 +879,7 @@ if __name__ == "__main__":
     print("=" * 60)
     print("AgentClaw 内置工具集 - 生产级测试")
     print("=" * 60)
-    
+
     # 显示已注册工具
     tools = registry.list_tools()
     print(f"\n已注册工具: {len(tools)} 个")
@@ -891,10 +888,10 @@ if __name__ == "__main__":
         cat = info.category.value if info else "?"
         desc = info.description[:50] + "..." if info and len(info.description) > 50 else (info.description if info else "")
         print(f"  [{cat}] {t}: {desc}")
-    
+
     passed = 0
     failed = 0
-    
+
     # ----------------------------------------------------------
     # 测试 1: web_search
     # ----------------------------------------------------------
@@ -911,7 +908,7 @@ if __name__ == "__main__":
     else:
         print(f"  ❌ 失败: {result.get('error')}")
         failed += 1
-    
+
     # ----------------------------------------------------------
     # 测试 2: calculator
     # ----------------------------------------------------------
@@ -939,7 +936,7 @@ if __name__ == "__main__":
             passed += 1
         else:
             failed += 1
-    
+
     # ----------------------------------------------------------
     # 测试 3: calculator 安全拦截
     # ----------------------------------------------------------
@@ -963,20 +960,20 @@ if __name__ == "__main__":
         else:
             print(f"  ✅ 已拦截(执行层): {expr[:40]}...")
             passed += 1
-    
+
     # ----------------------------------------------------------
     # 测试 4: file_read
     # ----------------------------------------------------------
     print("\n" + "-" * 40)
     print("测试 file_read:")
-    
+
     # 创建临时测试文件
     test_file = "/tmp/agentclaw_test.txt"
     with open(test_file, "w") as f:
         f.write("Line 1: Hello AgentClaw\n")
         f.write("Line 2: Tool Registry Test\n")
         f.write("Line 3: Production Grade\n")
-    
+
     result = registry.execute("file_read", {"file_path": test_file})
     if result["success"]:
         data = result["result"]
@@ -990,25 +987,25 @@ if __name__ == "__main__":
     else:
         print(f"  ❌ {result.get('error')}")
         failed += 1
-    
+
     # 测试敏感文件拦截
     print("\n  测试敏感文件拦截:")
     result = registry.execute("file_read", {"file_path": "/etc/passwd"})
     if result["success"]:
         data = result["result"]
         if "error" in data:
-            print(f"  ✅ 已拦截 /etc/passwd")
+            print("  ✅ 已拦截 /etc/passwd")
             passed += 1
         else:
-            print(f"  ❌ 未拦截 /etc/passwd!")
+            print("  ❌ 未拦截 /etc/passwd!")
             failed += 1
     else:
         print(f"  ✅ 已拦截(执行层): {result.get('error')}")
         passed += 1
-    
+
     # 清理
     os.remove(test_file) if os.path.exists(test_file) else None
-    
+
     # ----------------------------------------------------------
     # 测试 5: run_command
     # ----------------------------------------------------------
@@ -1033,7 +1030,7 @@ if __name__ == "__main__":
         else:
             print(f"  ❌ {cmd} → {result.get('error')}")
             failed += 1
-    
+
     # 测试危险命令拦截
     print("\n  测试危险命令拦截:")
     dangerous_cmds = [
@@ -1054,7 +1051,7 @@ if __name__ == "__main__":
         else:
             print(f"  ✅ 已拦截(执行层): {cmd[:40]}")
             passed += 1
-    
+
     # ----------------------------------------------------------
     # 测试 6: code_execute
     # ----------------------------------------------------------
@@ -1079,7 +1076,7 @@ if __name__ == "__main__":
         else:
             print(f"  ❌ {code[:50]}... → {result.get('error')}")
             failed += 1
-    
+
     # 测试沙箱危险操作拦截
     print("\n  测试沙箱拦截:")
     sandbox_tests = [
@@ -1099,7 +1096,7 @@ if __name__ == "__main__":
         else:
             print(f"  ✅ 已拦截(执行层): {code[:40]}")
             passed += 1
-    
+
     # ----------------------------------------------------------
     # 测试 7: LLM Tools Schema 输出
     # ----------------------------------------------------------
@@ -1111,7 +1108,7 @@ if __name__ == "__main__":
         func = tool_schema["function"]
         print(f"    - {func['name']}: {len(func['parameters']['properties'])} 个参数")
     passed += 1
-    
+
     # ----------------------------------------------------------
     # 测试 8: 关键字传参风格兼容
     # ----------------------------------------------------------
@@ -1121,7 +1118,7 @@ if __name__ == "__main__":
     if result["success"]:
         data = result["result"]
         if data.get("result") == 2:
-            print(f"  ✅ execute('calculator', expression='1+1') = 2")
+            print("  ✅ execute('calculator', expression='1+1') = 2")
             passed += 1
         else:
             print(f"  ❌ 期望 2, 得到 {data.get('result')}")
@@ -1129,7 +1126,7 @@ if __name__ == "__main__":
     else:
         print(f"  ❌ {result.get('error')}")
         failed += 1
-    
+
     # ----------------------------------------------------------
     # 测试 9: 工具统计
     # ----------------------------------------------------------
@@ -1140,7 +1137,7 @@ if __name__ == "__main__":
         print(f"  {name}: 调用 {stat['call_count']} 次, "
               f"成功率 {stat['success_rate']}, "
               f"平均延迟 {stat['avg_latency']}")
-    
+
     # ----------------------------------------------------------
     # 最终结果
     # ----------------------------------------------------------

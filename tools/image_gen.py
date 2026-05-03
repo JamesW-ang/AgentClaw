@@ -18,11 +18,10 @@ v6.1 变更:
   - openai (OpenAI Python 客户端)
   - core.config, core.logger (AgentClaw 内置)
 """
-import os
 import hashlib
-import time
-from pathlib import Path
+import os
 from datetime import datetime
+
 from openai import OpenAI
 
 from core.config import settings
@@ -126,7 +125,7 @@ def image_generate(prompt: str, size: str = "1024x1024",
     # v6: 从 settings 读取智谱 API 配置（CogView 是智谱模型）
     api_key = settings.ZHIPU_API_KEY
     if not api_key:
-        raise EnvironmentError(
+        raise OSError(
             "未设置 ZHIPU_API_KEY 环境变量。"
             "请执行: export ZHIPU_API_KEY='your-key-here'"
         )

@@ -19,18 +19,15 @@ AgentClaw RAG 知识库检索模块
     openai (用于文本嵌入)
 """
 
-import json
-import os
-import re
-import math
-import time
 import hashlib
+import json
 import logging
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
-from pathlib import Path
+import math
+import re
 from collections import Counter
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -53,7 +50,7 @@ class DocumentLoader:
     """
 
     @staticmethod
-    def load(file_path: str) -> List[Dict[str, Any]]:
+    def load(file_path: str) -> list[dict[str, Any]]:
         """
         加载文档
         Args:
@@ -82,7 +79,7 @@ class DocumentLoader:
         return docs
 
     @staticmethod
-    def _load_text(file_path: str) -> List[Dict]:
+    def _load_text(file_path: str) -> list[dict]:
         """加载纯文本"""
         content = Path(file_path).read_text(encoding="utf-8")
         paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
@@ -92,7 +89,7 @@ class DocumentLoader:
         ]
 
     @staticmethod
-    def _load_markdown(file_path: str) -> List[Dict]:
+    def _load_markdown(file_path: str) -> list[dict]:
         """加载 Markdown (去除格式)"""
         content = Path(file_path).read_text(encoding="utf-8")
         content = re.sub(r'^#{1,6}\s+', '', content, flags=re.MULTILINE)
@@ -106,7 +103,7 @@ class DocumentLoader:
         ]
 
     @staticmethod
-    def _load_json(file_path: str) -> List[Dict]:
+    def _load_json(file_path: str) -> list[dict]:
         """加载 JSON (提取所有字符串值)"""
         content = Path(file_path).read_text(encoding="utf-8")
         data = json.loads(content)
@@ -130,7 +127,7 @@ class DocumentLoader:
         ]
 
     @staticmethod
-    def _load_csv(file_path: str) -> List[Dict]:
+    def _load_csv(file_path: str) -> list[dict]:
         """加载 CSV"""
         content = Path(file_path).read_text(encoding="utf-8")
         lines = [l.strip() for l in content.split("\n") if l.strip()]
@@ -140,7 +137,7 @@ class DocumentLoader:
         ]
 
     @staticmethod
-    def load_text_direct(text: str, source: str = "direct") -> List[Dict]:
+    def load_text_direct(text: str, source: str = "direct") -> list[dict]:
         """直接加载文本字符串"""
         paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
         if not paragraphs and text.strip():
@@ -169,7 +166,7 @@ class TextSplitter:
         self.chunk_overlap = chunk_overlap
         self.mode = mode
 
-    def split(self, documents: List[Dict]) -> List[Dict]:
+    def split(self, documents: list[dict]) -> list[dict]:
         """分块文档列表"""
         chunks = []
         for doc in documents:
@@ -204,7 +201,7 @@ class TextSplitter:
         )
         return chunks
 
-    def _split_fixed(self, text: str) -> List[str]:
+    def _split_fixed(self, text: str) -> list[str]:
         """固定长度分块"""
         if len(text) <= self.chunk_size:
             return [text]
@@ -225,7 +222,7 @@ class TextSplitter:
                 break
         return [c for c in chunks if c]
 
-    def _split_paragraph(self, text: str) -> List[str]:
+    def _split_paragraph(self, text: str) -> list[str]:
         """按段落分块"""
         paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
         if not paragraphs:
@@ -242,7 +239,7 @@ class TextSplitter:
             chunks.append(current.strip())
         return chunks
 
-    def _split_sliding(self, text: str) -> List[str]:
+    def _split_sliding(self, text: str) -> list[str]:
         """滑动窗口分块"""
         if len(text) <= self.chunk_size:
             return [text]
@@ -274,16 +271,16 @@ class InMemoryVectorStore:
     MAX_VOCAB_SIZE = 5000   # 词汇表硬上限
     MAX_CHUNKS = 5000       # 最大文档块数
 
-    def __init__(self, embedding_fn: Optional[Callable] = None):
+    def __init__(self, embedding_fn: Callable | None = None):
         self.embedding_fn = embedding_fn or self._default_embedding
-        self._vectors: List[np.ndarray] = []   # numpy float32 向量列表
-        self._documents: List[Dict] = []
-        self._vocab: Dict[str, int] = {}       # word -> index
-        self._idf: Dict[str, float] = {}       # word -> idf weight
+        self._vectors: list[np.ndarray] = []   # numpy float32 向量列表
+        self._documents: list[dict] = []
+        self._vocab: dict[str, int] = {}       # word -> index
+        self._idf: dict[str, float] = {}       # word -> idf weight
         self._built_vocab = False
         self._vocab_size = 0
 
-    def add_documents(self, chunks: List[Dict]):
+    def add_documents(self, chunks: list[dict]):
         """添加文档块到向量库"""
         if not chunks:
             return
@@ -310,7 +307,7 @@ class InMemoryVectorStore:
         logger.info(f"向量库已更新: {len(self._documents)} 个文档块, "
                      f"词表: {self._vocab_size}, 内存: ~{mem_mb:.1f}MB")
 
-    def search(self, query: str, top_k: int = 5) -> List[Tuple[Dict, float]]:
+    def search(self, query: str, top_k: int = 5) -> list[tuple[dict, float]]:
         """相似度检索, 按相似度降序返回 (numpy 向量化)"""
         if not self._vectors:
             return []
@@ -341,8 +338,8 @@ class InMemoryVectorStore:
         logger.info(f"检索完成: {len(self._vectors)} 个块中找到 {len(results)} 条结果")
         return results
 
-    def _tokenize(self, text: str) -> List[str]:
-        """分词：英文单词 + 中文字符 bigram
+    def _tokenize(self, text: str) -> list[str]:
+        r"""分词：英文单词 + 中文字符 bigram
 
         英文/数字按 \w+ 分词，中文提取连续汉字段后生成字符 bigram。
         例如 "数字孪生系统" -> ["数字", "字孪", "孪生", "生系", "系统"]
@@ -363,7 +360,7 @@ class InMemoryVectorStore:
 
         return words
 
-    def _build_vocab(self, texts: List[str]):
+    def _build_vocab(self, texts: list[str]):
         """构建 TF-IDF 词汇表 (带词频上限，含中文 bigram)"""
         doc_count = len(texts)
         word_df = Counter()
@@ -386,7 +383,7 @@ class InMemoryVectorStore:
         logger.info(f"词表构建完成: {self._vocab_size} 词 "
                      f"(原始 {total_words} 词, 截断 {total_words - self._vocab_size})")
 
-    def _rebuild_vocab(self, new_texts: List[str]):
+    def _rebuild_vocab(self, new_texts: list[str]):
         """增量添加文档时重建词表 + 重新向量化已有文档"""
         all_texts = [d["content"] for d in self._documents] + new_texts
         old_count = len(self._documents)
@@ -475,11 +472,11 @@ class RAGEngine:
     """
 
     def __init__(self, chunk_size: int = 500, chunk_overlap: int = 50,
-                 embedding_fn: Optional[Callable] = None):
+                 embedding_fn: Callable | None = None):
         self.loader = DocumentLoader()
         self.splitter = TextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap, mode="fixed")
         self.vector_store = InMemoryVectorStore(embedding_fn)
-        self._sources: List[str] = []
+        self._sources: list[str] = []
 
     def add_documents(self, file_path: str) -> int:
         """加载文档并加入向量库"""
@@ -496,7 +493,7 @@ class RAGEngine:
         self.vector_store.add_documents(chunks)
         return len(chunks)
 
-    def search(self, query: str, top_k: int = 5) -> List[Tuple[Dict, float]]:
+    def search(self, query: str, top_k: int = 5) -> list[tuple[dict, float]]:
         """检索知识库"""
         if self.vector_store.doc_count == 0:
             logger.warning("知识库为空，请先添加文档")
@@ -530,10 +527,10 @@ class RAGEngine:
         return self.vector_store.doc_count
 
     @property
-    def sources(self) -> List[str]:
+    def sources(self) -> list[str]:
         return self._sources.copy()
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """获取统计信息"""
         return {
             "doc_count": self.doc_count,
@@ -547,7 +544,7 @@ class RAGEngine:
 # 与 Agent 系统集成的工具接口
 # ============================================================
 
-def create_rag_tool(rag_engine: RAGEngine) -> Dict[str, Any]:
+def create_rag_tool(rag_engine: RAGEngine) -> dict[str, Any]:
     """
     创建可注册到 ToolRegistry 的 RAG 工具
     返回格式符合 AgentClaw Level 2 的 tool 注册接口。

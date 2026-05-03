@@ -17,15 +17,15 @@ AgentClaw XML 配置管理工具模块
     标准库: xml.etree.ElementTree, json, shutil, uuid, os
 """
 
-import sys
-import os
 import json
+import os
 import shutil
+import sys
 import uuid
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any
 
 # 确保工作目录正确
 SCRIPT_DIR = Path(__file__).resolve().parent.parent
@@ -56,7 +56,7 @@ logger = _logger
 # ============================================================
 
 # VisionParams.xml 默认参数值（用于 diff 对比）
-VISION_DEFAULTS: Dict[str, Any] = {
+VISION_DEFAULTS: dict[str, Any] = {
     "CannyLow": 50,
     "CannyHigh": 150,
     "Clahe": 2.0,
@@ -66,7 +66,7 @@ VISION_DEFAULTS: Dict[str, Any] = {
 }
 
 # 参数校验范围: {参数名: (最小值, 最大值, 类型)}
-PARAM_RANGES: Dict[str, Tuple[float, float, type]] = {
+PARAM_RANGES: dict[str, tuple[float, float, type]] = {
     "CannyLow": (10, 200, int),
     "CannyHigh": (50, 300, int),
     "Clahe": (0.5, 5.0, float),
@@ -106,7 +106,7 @@ def _detect_config_type(root: ET.Element) -> str:
     return "vision"
 
 
-def _parse_vision_xml(root: ET.Element) -> Dict[str, Any]:
+def _parse_vision_xml(root: ET.Element) -> dict[str, Any]:
     """
     解析 VisionParams.xml，提取所有参数名-值对。
 
@@ -127,7 +127,7 @@ def _parse_vision_xml(root: ET.Element) -> Dict[str, Any]:
     return params
 
 
-def _parse_point_xml(root: ET.Element) -> Dict[str, Any]:
+def _parse_point_xml(root: ET.Element) -> dict[str, Any]:
     """
     解析 Point.xml，提取 Motion/IO/PLC 各组坐标及引脚信息。
 
@@ -184,7 +184,7 @@ def _coerce_value(text: str) -> Any:
     return text
 
 
-def _validate_params(params: Dict[str, Any]) -> List[str]:
+def _validate_params(params: dict[str, Any]) -> list[str]:
     """
     校验参数是否在允许范围内。
 
@@ -454,7 +454,7 @@ def xml_config_write(config_path: str, params: str) -> dict:
     }
 
 
-def _update_vision_xml(root: ET.Element, params: Dict[str, Any]) -> None:
+def _update_vision_xml(root: ET.Element, params: dict[str, Any]) -> None:
     """
     更新 VisionParams XML 中的参数节点。
 
@@ -480,7 +480,7 @@ def _update_vision_xml(root: ET.Element, params: Dict[str, Any]) -> None:
             logger.debug(f"新增参数节点: {name}={value}")
 
 
-def _update_point_xml(root: ET.Element, params: Dict[str, Any]) -> None:
+def _update_point_xml(root: ET.Element, params: dict[str, Any]) -> None:
     """
     更新 Point XML 中的坐标/引脚节点。
 
@@ -681,7 +681,7 @@ def register_xml_config_tools():
         import tools.xml_config
         xml_config_tool.register_xml_config_tools()
     """
-    from tools.registry import registry, ToolCategory
+    from tools.registry import ToolCategory, registry
 
     # 工具1: 读取 XML 配置
     registry.register_func(
@@ -887,7 +887,7 @@ def main():
     diff_info = result["result"]
     print(f"  总参数: {diff_info['total_params']}")
     print(f"  差异数: {diff_info['diff_count']}")
-    print(f"  差异项:")
+    print("  差异项:")
     for d in diff_info["diffs"]:
         print(f"    {d['param']}: 当前={d['current']}, 默认={d['default']}, 状态={d['status']}")
     print(f"  一致项: {diff_info['identical']}")
@@ -901,7 +901,7 @@ def main():
 
     # ===== 测试4: 注册到 tool_registry =====
     print("\n--- 测试工具注册 ---")
-    from tools.registry import registry, ToolCategory
+    from tools.registry import registry
     ToolRegistry = registry.__class__
     ToolRegistry.reset()
     from tools.registry import registry as fresh_registry
