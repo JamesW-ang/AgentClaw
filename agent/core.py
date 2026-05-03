@@ -255,7 +255,6 @@ def get_react_agent():
 
     import sqlite3
 
-    from langchain_openai import ChatOpenAI
     from langgraph.checkpoint.sqlite import SqliteSaver
     from langgraph.prebuilt import create_react_agent
 
@@ -274,11 +273,8 @@ def get_react_agent():
         logger.info("ReAct Agent 使用 LLMGuard 容错模式")
     except Exception as e:
         logger.warning(f"LLMGuard 初始化失败，回退到裸 ChatOpenAI: {e}")
-        llm = ChatOpenAI(
-            model=settings.LLM_MODEL, temperature=0,
-            api_key=settings.DEEPSEEK_API_KEY,
-            base_url=settings.DEEPSEEK_BASE_URL,
-        )
+        from core.config import create_llm
+        llm = create_llm()
 
     tools = get_react_tools()
 

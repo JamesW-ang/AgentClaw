@@ -60,6 +60,7 @@ class _ConfigValidator:
 
         # 数据库配置
         ("CHROMA_DB_PATH", "./data/chroma_db", False, "ChromaDB path"),
+        ("CHROMA_ENABLED", "true", False, "Enable ChromaDB (set false for low-memory devices)"),
 
         # 服务端口配置
         ("API_PORT", "8000", False, "API port"),
@@ -117,3 +118,21 @@ def validate_on_startup() -> None:
         for m in missing:
             print(m, file=sys.stderr)
         sys.exit(1)
+
+
+def create_llm(temperature: float = 0, **kwargs):
+    """统一 LLM 工厂 — 所有模块通过此函数获取 ChatOpenAI 实例。
+
+    用法:
+        llm = create_llm()              # 默认参数
+        llm = create_llm(temperature=0.7)  # 自定义温度
+    """
+    from langchain_openai import ChatOpenAI
+
+    return ChatOpenAI(
+        model=kwargs.pop("model", settings.LLM_MODEL),
+        temperature=temperature,
+        api_key=kwargs.pop("api_key", settings.DEEPSEEK_API_KEY),
+        base_url=kwargs.pop("base_url", settings.DEEPSEEK_BASE_URL),
+        **kwargs,
+    )

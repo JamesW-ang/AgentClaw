@@ -78,15 +78,9 @@ def _get_llm():
     global _llm
     if _llm is None:
         try:
-            from langchain_openai import ChatOpenAI
+            from core.config import create_llm
 
-            from core.config import settings
-            _llm = ChatOpenAI(
-                model=settings.LLM_MODEL,
-                temperature=0,
-                api_key=settings.DEEPSEEK_API_KEY,
-                base_url=settings.DEEPSEEK_BASE_URL,
-            )
+            _llm = create_llm()
             logger.info("AOI 工作流 LLM 已初始化")
         except Exception as e:
             logger.error(f"LLM 初始化失败: {e}")

@@ -29,7 +29,19 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import numpy as np
+# numpy 延迟加载 (~150MB)，仅在首次向量运算时导入
+class _LazyNumpy:
+    def __init__(self):
+        self._module = None
+    def _load(self):
+        if self._module is None:
+            import numpy as _m
+            self._module = _m
+        return self._module
+    def __getattr__(self, n):
+        return getattr(self._load(), n)
+
+np = _LazyNumpy()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("RAGEngine")

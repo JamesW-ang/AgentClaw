@@ -1,25 +1,15 @@
 """
 AgentClaw v6 — 统一 Demo UI
-集成8大场景: ReAct Agent / RAG知识库 / 多模态视觉 / 图片生成 / 多Agent协作 / AOI检测 / AOI智能闭环
-
-v6 迁移变更:
-  - dotenv 加载移至 core/config.py
-  - os.getenv 全部替换为 settings.X
-  - 新增 logger 统一日志
-  - 新增 AOI 上位机检测模块（Tab 6）
-  - Step2: 接入 EvolutionManager 自主进化
-
-用法:
-    python demo_ui.py
-
-依赖:
-    pip install gradio langchain-openai langchain-chroma langchain-huggingface langgraph python-dotenv openai opencv-python numpy Pillow
-    可选: pip install onnxruntime  (AOI 深度学习模式)
+集成9大场景: 检测分析 / 对话助手 / RAG知识库 / 多模态视觉 / 图片生成 / 多Agent协作 / AOI智能闭环 / 自反馈学习 / 日志查询
 """
+import json
 import os
+import shutil
 import sys
 import threading
 import time
+from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 
 # 确保工作目录正确（以脚本所在目录为基准）
@@ -51,17 +41,20 @@ from aoi.engine import (  # noqa: E402
 
 _lock = threading.Lock()
 
+# --- 进化管理器全局引用 (供 Tab9 自反馈学习使用) ---
+_evo_manager = None
+
+def get_evo_manager():
+    global _evo_manager
+    return _evo_manager
+
 # --- LLM ---
 _llm = None
 def get_llm():
     global _llm
     if _llm is None:
-        from langchain_openai import ChatOpenAI
-        _llm = ChatOpenAI(
-            model=settings.LLM_MODEL, temperature=0,
-            api_key=settings.DEEPSEEK_API_KEY,
-            base_url=settings.DEEPSEEK_BASE_URL,
-        )
+        from core.config import create_llm
+        _llm = create_llm()
     return _llm
 
 # --- 1. ReAct Agent + Step2 FeedbackCollector ---
@@ -213,7 +206,6 @@ def get_multi_app(scene="code_review"):
         return _multi_apps[scene]
 
     from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
-    from langchain_openai import ChatOpenAI
     from langgraph.graph import END, START, MessagesState, StateGraph
 
     from learning.feedback import FeedbackSignal
@@ -298,11 +290,9 @@ def get_multi_app(scene="code_review"):
     tool_map = {t.name: t for t in tools}
 
     # --- LLM 绑定工具 ---
-    llm = ChatOpenAI(
-        model=settings.LLM_MODEL, temperature=0,
-        api_key=settings.DEEPSEEK_API_KEY,
-        base_url=settings.DEEPSEEK_BASE_URL,
-    )
+    from core.config import create_llm
+
+    llm = create_llm()
     llm_with_tools = llm.bind_tools(tools)
 
     # --- 创建带工具调用循环的 Agent 节点 ---
@@ -431,23 +421,25 @@ def get_multi_app(scene="code_review"):
 
 # ---- 1. ReAct Agent ----
 def react_respond(message, history):
-    with _lock:
-        try:
-            from agent.core import get_react_agent
-            app = get_react_agent()
-            config = {"configurable": {"thread_id": "demo-react-1"}}
-            result = app.invoke({"messages": [("human", message)]}, config)
-            yield result["messages"][-1].content
-        except Exception as e:
-            yield f"ReAct Agent 错误: {e}"
+    try:
+        from agent.core import get_react_agent
+        app = get_react_agent()
+        cfg_id = f"chat-{time.strftime('%H%M%S')}-{len(history)}"
+        config = {"configurable": {"thread_id": cfg_id}}
+        result = app.invoke({"messages": [("human", message)]}, config)
+        return result["messages"][-1].content
+    except Exception as e:
+        return f"ReAct Agent 错误: {e}"
 
 
 # ---- 2. RAG 知识库 ----
 RAG_MAX_FILE_SIZE = 5 * 1024 * 1024
 
 def rag_upload(files):
+    """流式上传文档 — 逐文件 yield 进度，保持 WebSocket 连接不断开"""
     if not files:
-        return "未选择文件", rag_get_stats()
+        yield "未选择文件", rag_get_stats()
+        return
     import tools.builtin as builtin_tools
     added = 0
     msgs = []
@@ -466,13 +458,14 @@ def rag_upload(files):
             if file_size == 0:
                 msgs.append(f"[{name}] 文件为空")
                 continue
+            yield f"正在处理 {name}...", rag_get_stats()
             count = builtin_tools.rag_add_documents(file_path)
             added += count
             msgs.append(f"[{name}] {count} 个文档块")
         except Exception as e:
             fname = name if 'name' in dir() else str(f)
             msgs.append(f"[{fname}] 失败: {e}")
-    return f"共添加 {added} 个文档块\n" + "\n".join(msgs), rag_get_stats()
+    yield f"共添加 {added} 个文档块\n" + "\n".join(msgs), rag_get_stats()
 
 def rag_add_text(text):
     if not text or not text.strip():
@@ -569,14 +562,13 @@ def image_generate(prompt, size):
 
 # ---- 5. 多 Agent 协作（多场景 + 工具增强）----
 def multi_agent_respond(message, history, scene):
-    with _lock:
-        try:
-            app = get_multi_app(scene)
-            result = app.invoke({"messages": [("human", message)]})
-            outputs = [msg.content for msg in result["messages"] if msg.type == "ai" and msg.content]
-            yield "\n\n---\n\n".join(outputs) if outputs else "无输出"
-        except Exception as e:
-            yield f"多Agent错误: {e}"
+    try:
+        app = get_multi_app(scene)
+        result = app.invoke({"messages": [("human", message)]})
+        outputs = [msg.content for msg in result["messages"] if msg.type == "ai" and msg.content]
+        return "\n\n---\n\n".join(outputs) if outputs else "无输出"
+    except Exception as e:
+        return f"多Agent错误: {e}"
 
 
 # ---- 6. AOI 检测 (Gradio 接口) ----
@@ -663,8 +655,7 @@ def aoi_inspect(image, mode, canny_low, canny_high, clahe_clip, min_area, conf_t
 def aoi_agent_analyze(detect_report, history):
     """将检测结果发送给 ReAct Agent 进行智能分析"""
     if not detect_report or not detect_report.strip():
-        yield "请先完成 Step 1 的 PCB 检测"
-        return
+        return "请先完成 Step 1 的 PCB 检测"
     prompt = (
         f"你是 PCB 电路板缺陷分析专家。请对以下 AOI 检测报告进行深度分析：\n\n"
         f"=== 检测报告 ===\n{detect_report}\n\n"
@@ -675,14 +666,13 @@ def aoi_agent_analyze(detect_report, history):
         f"4. 检测参数优化建议（如 Canny 阈值、CLAHE、最小面积等）\n"
         f"5. 是否需要重新检测以及推荐的新参数值"
     )
-    with _lock:
-        try:
-            app = get_react_app()
-            config = {"configurable": {"thread_id": "demo-aoi-analyze-1"}}
-            result = app.invoke({"messages": [("human", prompt)]}, config)
-            yield result["messages"][-1].content
-        except Exception as e:
-            yield f"Agent 分析错误: {e}"
+    try:
+        from langchain_core.messages import HumanMessage
+        llm = get_llm()
+        response = llm.invoke([HumanMessage(content=prompt)])
+        return response.content
+    except Exception as e:
+        return f"Agent 分析错误: {e}"
 
 
 # ---- 7. AOI 智能闭环（多Agent工作流） ----
@@ -820,6 +810,143 @@ def aoi_closed_loop_run(image, config_path):
 
 
 
+# ---- 9. 自反馈学习可视化 ----
+
+def _fmt_timestamp(ts: float) -> str:
+    return datetime.fromtimestamp(ts).strftime("%m-%d %H:%M:%S") if ts else "N/A"
+
+
+def refresh_learning_dashboard():
+    """刷新自反馈学习仪表盘 — 进化报告 + 策略库 + 路由权重"""
+    evo = get_evo_manager()
+    if not evo:
+        return "进化管理器未启动，请重启 UI", "{}", "暂无策略", "暂无路由"
+    try:
+        report = evo.get_evolution_report()
+        metrics = evo.get_metrics()
+        summary = (
+            f"周期: {metrics['cycles_completed']} | "
+            f"反馈: {metrics['feedback_count']} | "
+            f"成功率: {metrics['success_rate']:.1%} | "
+            f"策略: {metrics['strategy_count']} | "
+            f"反模式: {metrics['anti_pattern_count']} | "
+            f"趋势: {metrics['trend']}"
+        )
+        report_json = json.dumps(report, ensure_ascii=False, indent=2)
+        strategies = report.get("top_strategies", [])
+        strat_text = "\n".join(
+            f"{s['name'][:40]}: eff={s['effectiveness']:.3f} "
+            f"rate={s['success_rate']:.3f} conf={s['confidence']:.3f} "
+            f"used={s['usage_count']}"
+            for s in strategies
+        ) if strategies else "暂无正向策略"
+        routes = report.get("route_weights", {})
+        route_text = "\n".join(
+            f"{k[:35]:<35} {v:.4f}" for k, v in list(routes.items())[:15]
+        ) if routes else "暂无路由权重数据"
+        return summary, report_json, strat_text, route_text
+    except Exception as e:
+        return f"获取报告失败: {e}", "{}", str(e), str(e)
+
+
+def trigger_manual_evolution():
+    """手动触发一轮进化"""
+    evo = get_evo_manager()
+    if not evo:
+        return "进化管理器未启动"
+    try:
+        evo._run_evolution_cycle()
+        return "手动进化周期已执行完成 ✓"
+    except Exception as e:
+        return f"进化执行失败: {e}"
+
+
+def get_recent_feedback():
+    """获取最近反馈信号的格式化视图"""
+    collector = get_feedback_collector()
+    recent = list(collector.signals)[-50:]
+    if not recent:
+        return "暂无反馈", "{}"
+    tool_stats = defaultdict(lambda: {"total": 0, "success": 0})
+    for f in recent:
+        tool_stats[f.tool_name]["total"] += 1
+        if f.success:
+            tool_stats[f.tool_name]["success"] += 1
+    lines = [f"{'工具':<28} {'请求':>5} {'成功':>5} {'成功率':>8}", "-" * 50]
+    for tool, s in sorted(tool_stats.items(), key=lambda x: x[1]["total"], reverse=True):
+        rate = s["success"] / s["total"] if s["total"] else 0
+        lines.append(f"{tool[:28]:<28} {s['total']:>5} {s['success']:>5} {rate:>7.1%}")
+    signals_json = json.dumps(
+        [{"ts": _fmt_timestamp(f.timestamp), "tool": f.tool_name,
+          "ok": f.success, "lat": f.latency, "err": f.error_type} for f in recent[-20:]],
+        ensure_ascii=False, indent=2)
+    return "\n".join(lines), signals_json
+
+
+# ---- 10. 日志查询 ----
+
+LOG_DIR = SCRIPT_DIR / "data" / "logs"
+LOG_FILE = LOG_DIR / "app.log"
+
+
+def search_logs(level: str, keyword: str, tail_lines: int):
+    """搜索过滤日志，同时生成导出文件"""
+    if not LOG_FILE.exists():
+        return "日志文件不存在，请先运行系统产生日志", None
+    try:
+        text = LOG_FILE.read_text(encoding="utf-8")
+        lines = text.splitlines(True)
+        if tail_lines and tail_lines > 0:
+            lines = lines[-tail_lines:]
+        if level and level != "ALL":
+            lines = [l for l in lines if level.upper() in l]
+        if keyword and keyword.strip():
+            kw = keyword.strip().lower()
+            lines = [l for l in lines if kw in l.lower()]
+        result = "".join(lines[-500:])
+        if not result.strip():
+            result = "(无匹配日志)"
+        export_path = LOG_DIR / f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        export_path.write_text("".join(lines), encoding="utf-8")
+        return result, str(export_path)
+    except Exception as e:
+        return f"日志查询失败: {e}", None
+
+
+def import_logs(file):
+    """导入外部日志文件到 log 目录"""
+    if file is None:
+        return "请选择要导入的日志文件"
+    try:
+        src = file if isinstance(file, str) else file.name
+        dst = LOG_DIR / f"imported_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{Path(src).name}"
+        shutil.copy2(src, dst)
+        return f"日志已导入: {dst.name}"
+    except Exception as e:
+        return f"导入失败: {e}"
+
+
+def export_logs(level: str, keyword: str, tail_lines: int):
+    """导出过滤后的日志到文件"""
+    if not LOG_FILE.exists():
+        return "日志文件不存在"
+    try:
+        text = LOG_FILE.read_text(encoding="utf-8")
+        lines = text.splitlines(True)
+        if tail_lines and tail_lines > 0:
+            lines = lines[-tail_lines:]
+        if level and level != "ALL":
+            lines = [l for l in lines if level.upper() in l]
+        if keyword and keyword.strip():
+            kw = keyword.strip().lower()
+            lines = [l for l in lines if kw in l.lower()]
+        export_path = LOG_DIR / f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        export_path.write_text("".join(lines), encoding="utf-8")
+        return f"已导出 {len(lines)} 条日志 → {export_path.name}"
+    except Exception as e:
+        return f"导出失败: {e}"
+
+
 # ============================================================
 # 构建 UI
 # ============================================================
@@ -832,78 +959,68 @@ def build_ui():
         from learning.learner import ExperienceLearner
         from learning.optimizer import AdaptiveOptimizer
 
+        global _evo_manager
         learner = ExperienceLearner(collector)
         optimizer = AdaptiveOptimizer()
-        evo_manager = EvolutionManager(collector, learner, optimizer)
-        evo_manager.start_evolution_loop(interval=3600)  # 每小时进化一次
+        _evo_manager = EvolutionManager(collector, learner, optimizer)
+        _evo_manager.start_evolution_loop(interval=3600)  # 每小时进化一次
         logger.info("自主进化系统已启动 (间隔: 3600秒)")
     except Exception as e:
         logger.warning(f"自主进化系统启动失败 (不影响主功能): {e}")
 
     with gr.Blocks(title="AgentClaw v6 Demo") as demo:
 
-        gr.Markdown("""
-            # AgentClaw v6 — 统一 Demo
-            **八层架构全链路演示** | 检测分析 · 对话助手 · RAG 知识库 · 多模态视觉 · 图片生成 · 多Agent协作 · AOI 独立检测 · AOI 智能闭环
-        """)
+        gr.Markdown("""# AgentClaw v6 — AOI 智能检测平台
+检测分析 · 对话助手 · RAG · 多模态视觉 · 图片生成 · 多Agent协作 · AOI智能闭环 · 自反馈学习 · 日志查询""")
 
         with gr.Tabs():
 
             # ===================== Tab 1: 检测分析（默认首页） =====================
             with gr.Tab("检测分析"):
-                # 共享状态：保存检测结果
                 detect_state = gr.State({"report": "", "image": None})
 
-                # ---- Step 1: PCB 检测 ----
-                gr.Markdown("### Step 1: PCB 检测")
+                gr.Markdown("### Step 1: PCB 检测 · Step 2: Agent 分析 · Step 3: 调参验证")
                 with gr.Row():
                     with gr.Column(scale=1):
                         detect1_image = gr.Image(type="filepath", label="上传 PCB 图片")
-                        with gr.Row():
-                            detect1_mode = gr.Radio(
-                                ["传统算法", "深度学习", "混合检测"],
-                                value="传统算法", label="检测模式",
-                                info="深度学习和混合模式需要先加载 ONNX 模型")
-                        # 模型管理
-                        with gr.Group():
-                            gr.Markdown("**ONNX 模型管理**")
-                            detect1_model_file = gr.File(label="选择 .onnx 模型", file_types=[".onnx"])
+                        detect1_mode = gr.Radio(
+                            ["传统算法", "深度学习", "混合检测"],
+                            value="传统算法", label="检测模式")
+                        with gr.Accordion("ONNX 模型", open=False):
+                            detect1_model_file = gr.File(label="选择 .onnx", file_types=[".onnx"])
                             with gr.Row():
-                                detect1_load_btn = gr.Button("加载模型", variant="primary", size="sm")
-                                detect1_unload_btn = gr.Button("卸载模型", variant="stop", size="sm")
-                            detect1_model_info = gr.Textbox(label="模型状态", lines=2, interactive=False, value="未加载模型，使用传统算法")
-                        with gr.Row():
-                            detect1_canny_low = gr.Number(label="Canny 低", value=50, minimum=10, maximum=200)
-                            detect1_canny_high = gr.Number(label="Canny 高", value=150, minimum=50, maximum=300)
-                        with gr.Row():
-                            detect1_clahe = gr.Number(label="CLAHE", value=2.0, minimum=0.5, maximum=5.0, step=0.5)
-                            detect1_min_area = gr.Number(label="最小面积", value=50, minimum=10, maximum=500)
-                        with gr.Row():
-                            detect1_conf = gr.Number(label="置信度", value=0.5, minimum=0.1, maximum=0.99, step=0.05)
-                            detect1_iou = gr.Number(label="NMS IoU", value=0.45, minimum=0.1, maximum=0.9, step=0.05)
+                                detect1_load_btn = gr.Button("加载", variant="primary", size="sm")
+                                detect1_unload_btn = gr.Button("卸载", variant="stop", size="sm")
+                            detect1_model_info = gr.Textbox(label="状态", lines=1, interactive=False, value="未加载模型")
+                        with gr.Accordion("检测参数", open=True):
+                            with gr.Row():
+                                detect1_canny_low = gr.Number(label="Canny低", value=50, minimum=10, maximum=200)
+                                detect1_canny_high = gr.Number(label="Canny高", value=150, minimum=50, maximum=300)
+                            with gr.Row():
+                                detect1_clahe = gr.Number(label="CLAHE", value=2.0, minimum=0.5, maximum=5.0, step=0.5)
+                                detect1_min_area = gr.Number(label="最小面积", value=50, minimum=10, maximum=500)
+                            with gr.Row():
+                                detect1_conf = gr.Number(label="置信度", value=0.5, minimum=0.1, maximum=0.99, step=0.05)
+                                detect1_iou = gr.Number(label="NMS IoU", value=0.45, minimum=0.1, maximum=0.9, step=0.05)
                         detect1_btn = gr.Button("开始检测", variant="primary", size="lg")
                     with gr.Column(scale=2):
                         with gr.Row():
-                            detect1_processed = gr.Image(label="预处理结果", type="numpy")
-                            detect1_result = gr.Image(label="检测结果标注", type="numpy")
+                            detect1_processed = gr.Image(label="预处理", type="numpy")
+                            detect1_result = gr.Image(label="检测标注", type="numpy")
                         detect1_report = gr.Textbox(label="检测报告", lines=12, interactive=False)
 
-                gr.Markdown("---")
-                gr.Markdown("### Step 2: Agent 智能分析")
-                gr.Markdown("检测完成后，点击下方按钮让 Agent 对检测报告进行智能分析")
-                detect2_btn = gr.Button("Agent 智能分析", variant="primary")
-                detect2_result = gr.Textbox(label="Agent 分析结果", lines=15, interactive=False)
+                with gr.Accordion("Step 2: Agent 智能分析", open=True):
+                    detect2_btn = gr.Button("Agent 智能分析", variant="primary")
+                    detect2_result = gr.Textbox(label="分析结果", lines=10, interactive=False)
 
-                gr.Markdown("---")
-                gr.Markdown("### Step 3: 调参验证")
-                gr.Markdown("根据 Agent 分析建议，调整参数后重新检测")
-                with gr.Row():
-                    detect3_canny_low = gr.Number(label="Canny 低", value=50, minimum=10, maximum=200)
-                    detect3_canny_high = gr.Number(label="Canny 高", value=150, minimum=50, maximum=300)
-                    detect3_clahe = gr.Number(label="CLAHE", value=2.0, minimum=0.5, maximum=5.0, step=0.5)
-                    detect3_min_area = gr.Number(label="最小面积", value=50, minimum=10, maximum=500)
-                detect3_btn = gr.Button("重新检测", variant="secondary")
-                detect3_report = gr.Textbox(label="重新检测结果", lines=10, interactive=False)
+                with gr.Accordion("Step 3: 调参验证", open=False):
+                    with gr.Row():
+                        detect3_canny_low = gr.Number(label="Canny低", value=50, minimum=10, maximum=200)
+                        detect3_canny_high = gr.Number(label="Canny高", value=150, minimum=50, maximum=300)
+                        detect3_clahe = gr.Number(label="CLAHE", value=2.0, minimum=0.5, maximum=5.0, step=0.5)
+                        detect3_min_area = gr.Number(label="最小面积", value=50, minimum=10, maximum=500)
+                    detect3_btn = gr.Button("重新检测", variant="secondary")
+                    detect3_report = gr.Textbox(label="重新检测结果", lines=8, interactive=False)
 
                 # Step1 事件绑定
                 def detect_step1(image, mode, canny_low, canny_high, clahe_clip, min_area, conf_thresh, iou_thresh):
@@ -947,7 +1064,7 @@ def build_ui():
 
             # ===================== Tab 2: 对话助手（原 ReAct Agent） =====================
             with gr.Tab("对话助手"):
-                gr.Markdown("### ReAct 推理 Agent（统一工具入口）\n自动选择 10+ 工具：搜索/计算/文件/命令/代码/系统监控/进程管理/图片分析/图片生成/浏览器")
+                gr.Markdown("### ReAct Agent — 搜索/计算/文件/命令/代码/监控/视觉/生图 等10+工具")
                 gr.ChatInterface(
                     react_respond,
                     examples=[
@@ -960,23 +1077,22 @@ def build_ui():
 
             # ===================== Tab 3: RAG 知识库 =====================
             with gr.Tab("RAG 知识库"):
-                gr.Markdown("### RAG 知识库检索\n支持 TXT/Markdown/JSON/CSV，自动切换 ChromaDB / TF-IDF")
+                gr.Markdown("### RAG 检索 — ChromaDB / TF-IDF 双引擎")
                 with gr.Row():
                     with gr.Column(scale=1):
-                        gr.Markdown("**知识库管理**")
-                        rag_file = gr.File(label="上传文档 (< 5MB)", file_count="multiple",
-                                          file_types=[".txt", ".md", ".json", ".csv"])
-                        rag_upload_btn = gr.Button("加载文件", variant="primary")
-                        rag_upload_out = gr.Textbox(label="加载结果", lines=3, interactive=False)
-                        rag_text = gr.Textbox(label="或直接输入文本", placeholder="粘贴文本内容...", lines=4)
-                        rag_text_btn = gr.Button("添加文本", variant="secondary")
-                        rag_clear_btn = gr.Button("清空知识库", variant="stop")
-                        rag_stats = gr.Textbox(label="知识库状态", value=rag_get_stats(), lines=2, interactive=False)
+                        with gr.Accordion("文档管理", open=True):
+                            rag_file = gr.File(label="上传文档 (<5MB)", file_count="multiple",
+                                              file_types=[".txt", ".md", ".json", ".csv"])
+                            rag_upload_btn = gr.Button("加载文件", variant="primary")
+                            rag_text = gr.Textbox(label="或输入文本", placeholder="粘贴内容...", lines=3)
+                            rag_text_btn = gr.Button("添加文本", variant="secondary")
+                            rag_clear_btn = gr.Button("清空", variant="stop")
+                            rag_stats = gr.Textbox(label="状态", value=rag_get_stats(), lines=2, interactive=False)
+                        rag_upload_out = gr.Textbox(label="操作结果", lines=2, interactive=False)
                     with gr.Column(scale=2):
-                        gr.Markdown("**知识检索**")
                         with gr.Row():
-                            rag_query = gr.Textbox(label="查询内容", placeholder="输入要检索的内容...", scale=4)
-                            rag_topk = gr.Number(label="返回数量", value=3, minimum=1, maximum=20, step=1, scale=1)
+                            rag_query = gr.Textbox(label="查询", placeholder="输入检索内容...", scale=4)
+                            rag_topk = gr.Number(label="TopK", value=3, minimum=1, maximum=20, step=1, scale=1)
                         rag_search_btn = gr.Button("检索", variant="primary")
                         rag_search_out = gr.Textbox(label="检索结果", lines=10, interactive=False)
                 rag_upload_btn.click(rag_upload, [rag_file], [rag_upload_out, rag_stats])
@@ -986,44 +1102,40 @@ def build_ui():
 
             # ===================== Tab 4: 多模态视觉 =====================
             with gr.Tab("多模态视觉"):
-                gr.Markdown("### VLM 视觉理解\n上传图片，选择分析模式，调用 GLM-4V 视觉模型")
+                gr.Markdown("### VLM 视觉理解 — GLM-4V")
                 with gr.Row():
                     with gr.Column(scale=1):
                         vision_image = gr.Image(type="filepath", label="上传图片")
                         vision_type = gr.Radio(
                             ["auto", "text", "ocr", "describe", "analyze"], value="auto", label="分析模式",
-                            info="auto=智能路由 | text=自定义问题 | ocr=文字识别 | describe=描述 | analyze=深度分析")
-                        vision_q = gr.Textbox(label="自定义问题", placeholder="针对图片提问...", lines=2)
+                            info="auto=智能路由 | text=提问 | ocr=识字 | describe=描述 | analyze=深度分析")
+                        vision_q = gr.Textbox(label="问题", placeholder="针对图片提问...", lines=2)
                         vision_btn = gr.Button("开始分析", variant="primary")
                     with gr.Column(scale=2):
-                        vision_out = gr.Textbox(label="分析结果", lines=15, interactive=False)
+                        vision_out = gr.Textbox(label="结果", lines=15, interactive=False)
                 vision_btn.click(vision_analyze, [vision_image, vision_q, vision_type], [vision_out])
 
             # ===================== Tab 5: 图片生成 =====================
             with gr.Tab("图片生成"):
-                gr.Markdown("### 文生图 — CogView-3-Flash\n输入描述文字，AI 生成图片")
+                gr.Markdown("### 文生图 — CogView-3-Flash")
                 with gr.Row():
                     with gr.Column(scale=1):
                         gen_prompt = gr.Textbox(label="提示词", placeholder="描述你想要的图片...", lines=4)
                         gen_size = gr.Dropdown(
                             ["1024x1024", "768x1344", "864x1152", "1344x768", "1152x864"],
-                            value="1024x1024", label="图片尺寸")
-                        gen_btn = gr.Button("生成图片", variant="primary")
+                            value="1024x1024", label="尺寸")
+                        gen_btn = gr.Button("生成", variant="primary")
                     with gr.Column(scale=2):
-                        gen_output = gr.Image(label="生成结果", type="filepath")
-                        gen_info = gr.Textbox(label="生成信息", interactive=False)
+                        gen_output = gr.Image(label="结果", type="filepath")
+                        gen_info = gr.Textbox(label="信息", interactive=False)
                 gen_btn.click(image_generate, [gen_prompt, gen_size], [gen_output, gen_info])
 
             # ===================== Tab 6: 多Agent协作 =====================
             with gr.Tab("多Agent协作"):
-                gr.Markdown("### 多Agent协作系统\n基于 LangGraph StateGraph，每个Agent角色具备独立工具调用能力（搜索/计算/文件读写/命令执行）")
-
+                gr.Markdown("### 多Agent协作 — LangGraph StateGraph 三角色流水线")
                 ma_scene = gr.Dropdown(
                     choices=[(cfg["title"], key) for key, cfg in MULTI_AGENT_SCENES.items()],
-                    value="code_review",
-                    label="协作场景",
-                    info="不同场景使用不同的Agent角色组合",
-                )
+                    value="code_review", label="协作场景")
                 ma_desc = gr.Markdown(MULTI_AGENT_SCENES["code_review"]["desc"])
 
                 def _update_scene_desc(scene):
@@ -1040,100 +1152,23 @@ def build_ui():
                     ],
                 )
 
-            # ===================== Tab 7: AOI 独立检测 =====================
-            with gr.Tab("AOI 独立检测"):
-                gr.Markdown("### AOI 上位机检测系统\n支持传统算法 / 深度学习(ONNX) / 混合检测，OpenCV 图像处理 + YOLO 推理")
-
-                with gr.Row():
-                    # 左栏：参数控制
-                    with gr.Column(scale=1):
-                        # 检测模式
-                        aoi_mode = gr.Radio(
-                            ["传统算法", "深度学习", "混合检测"],
-                            value="传统算法", label="检测模式",
-                            info="深度学习和混合模式需要先加载 ONNX 模型")
-
-                        # 模型管理
-                        with gr.Group():
-                            gr.Markdown("**ONNX 模型管理**")
-                            aoi_model_file = gr.File(label="选择 .onnx 模型", file_types=[".onnx"])
-                            with gr.Row():
-                                aoi_load_btn = gr.Button("加载模型", variant="primary", size="sm")
-                                aoi_unload_btn = gr.Button("卸载模型", variant="stop", size="sm")
-                            aoi_model_info = gr.Textbox(label="模型状态", lines=2, interactive=False, value="未加载模型，使用传统算法")
-
-                        # 传统算法参数
-                        with gr.Group():
-                            gr.Markdown("**传统算法参数**")
-                            with gr.Row():
-                                aoi_canny_low = gr.Number(label="Canny 低", value=50, minimum=10, maximum=200)
-                                aoi_canny_high = gr.Number(label="Canny 高", value=150, minimum=50, maximum=300)
-                            with gr.Row():
-                                aoi_clahe = gr.Number(label="CLAHE", value=2.0, minimum=0.5, maximum=5.0, step=0.5)
-                                aoi_min_area = gr.Number(label="最小面积", value=50, minimum=10, maximum=500)
-
-                        # 深度学习参数
-                        with gr.Group():
-                            gr.Markdown("**深度学习参数**")
-                            with gr.Row():
-                                aoi_conf = gr.Number(label="置信度", value=0.5, minimum=0.1, maximum=0.99, step=0.05)
-                                aoi_iou = gr.Number(label="NMS IoU", value=0.45, minimum=0.1, maximum=0.9, step=0.05)
-
-                        aoi_btn = gr.Button("开始检测", variant="primary", size="lg")
-
-                    # 右栏：结果展示
-                    with gr.Column(scale=2):
-                        aoi_input = gr.Image(type="filepath", label="上传检测图片")
-
-                        with gr.Row():
-                            aoi_processed = gr.Image(label="预处理结果", type="numpy")
-                            aoi_result = gr.Image(label="检测结果标注", type="numpy")
-
-                        aoi_report = gr.Textbox(label="检测报告", lines=12, interactive=False)
-
-                # 事件绑定
-                aoi_load_btn.click(aoi_load_model, [aoi_model_file], [aoi_model_info])
-                aoi_unload_btn.click(aoi_unload_model, [], [aoi_model_info])
-                aoi_btn.click(
-                    aoi_inspect,
-                    [aoi_input, aoi_mode, aoi_canny_low, aoi_canny_high,
-                     aoi_clahe, aoi_min_area, aoi_conf, aoi_iou],
-                    [aoi_processed, aoi_result, aoi_report],
-                )
-
-            # ===================== Tab 8: AOI 智能闭环 =====================
+            # ===================== Tab 7: AOI 智能闭环 =====================
             with gr.Tab("AOI 智能闭环"):
-                gr.Markdown("""
-                ### AOI 智能闭环 — 多 Agent 自主调参系统
-                **一键触发完整闭环**: 缺陷识别 → RAG案例检索 → 参数推理 → XML改写 → 复检验证
-                基于 LangGraph StateGraph 条件分支，4 个专业 Agent 角色协同工作。
-
-                > **仅限传统算法模式**: 上位机 XML 参数（CannyLow/High、Clahe、MinArea 等）
-                > 均为传统视觉算法阈值，深度学习调优不在 XML 参数范围内。
-                """)
+                gr.Markdown("""### AOI 智能闭环 — 缺陷识别 → RAG检索 → 参数推理 → XML改写 → 复检验证
+*仅限传统算法模式 (传统视觉阈值闭环调优)，运行约 30-60 秒*""")
 
                 with gr.Row():
                     with gr.Column(scale=1):
-                        gr.Markdown("**输入配置**")
                         aoi_cl_image = gr.Image(type="filepath", label="上传 PCB 图片")
                         aoi_cl_config = gr.Textbox(
-                            label="XML配置路径（可选）",
-                            placeholder="留空则不写入XML，仅调整检测参数",
-                            value="",
-                            lines=1)
-                        aoi_cl_btn = gr.Button(
-                            "启动智能闭环", variant="primary", size="lg")
-                        gr.Markdown("*检测模式固定为传统算法（传统视觉阈值闭环调优）*")
-                        gr.Markdown("*运行过程约 30-60 秒，取决于 LLM 响应速度*")
-
+                            label="XML配置路径 (可选)", placeholder="留空则仅调整参数不写入XML", lines=1)
+                        aoi_cl_btn = gr.Button("启动智能闭环", variant="primary", size="lg")
                     with gr.Column(scale=2):
-                        gr.Markdown("**执行日志**")
                         aoi_cl_log = gr.Textbox(
-                            label="闭环执行日志", lines=8, interactive=False,
-                            placeholder="点击「启动智能闭环」后，这里会实时显示各阶段执行进度...")
-                        gr.Markdown("**最终结果**")
+                            label="执行日志", lines=8, interactive=False,
+                            placeholder="实时显示各阶段进度...")
                         aoi_cl_result = gr.Textbox(
-                            label="闭环结果报告", lines=20, interactive=False)
+                            label="结果报告", lines=20, interactive=False)
 
                 # 事件绑定
                 aoi_cl_btn.click(
@@ -1142,12 +1177,88 @@ def build_ui():
                     [aoi_cl_log, aoi_cl_result],
                 )
 
+            # ===================== Tab 8: 自反馈学习 =====================
+            with gr.Tab("自反馈学习"):
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        gr.Markdown("### 进化状态")
+                        learn_summary = gr.Textbox(
+                            label="实时摘要", lines=2, interactive=False,
+                            placeholder="点击刷新获取进化状态...")
+                    with gr.Column(scale=1):
+                        learn_refresh = gr.Button("刷新面板", variant="primary")
+                        learn_trigger = gr.Button("手动进化", variant="secondary", size="sm")
+
+                with gr.Accordion("策略库 & 路由权重", open=True):
+                    with gr.Row():
+                        with gr.Column(scale=1):
+                            gr.Markdown("**正向策略 Top**")
+                            learn_strategies = gr.Textbox(
+                                label="策略列表", lines=8, interactive=False,
+                                placeholder="暂无策略数据")
+                        with gr.Column(scale=1):
+                            gr.Markdown("**路由权重 Top15**")
+                            learn_routes = gr.Textbox(
+                                label="路由权重", lines=8, interactive=False,
+                                placeholder="暂无路由数据")
+
+                with gr.Accordion("反馈信号明细", open=False):
+                    with gr.Row():
+                        with gr.Column(scale=2):
+                            learn_fb_stats = gr.Textbox(
+                                label="工具成功率统计 (最近50条)", lines=10, interactive=False)
+                        with gr.Column(scale=3):
+                            learn_fb_json = gr.Textbox(
+                                label="最近20条信号 (JSON)", lines=10, interactive=False)
+
+                with gr.Accordion("进化报告 (完整 JSON)", open=False):
+                    learn_report = gr.Textbox(
+                        label="进化报告", lines=14, interactive=False,
+                        placeholder="点击刷新获取完整进化报告...")
+
+                learn_refresh.click(
+                    refresh_learning_dashboard,
+                    [], [learn_summary, learn_report, learn_strategies, learn_routes])
+                learn_refresh.click(
+                    get_recent_feedback, [], [learn_fb_stats, learn_fb_json])
+                learn_trigger.click(
+                    trigger_manual_evolution, [], [learn_summary])
+
+            # ===================== Tab 9: 日志查询 =====================
+            with gr.Tab("日志查询"):
+                with gr.Row():
+                    log_level = gr.Dropdown(
+                        ["ALL", "DEBUG", "INFO", "WARNING", "ERROR"],
+                        value="ALL", label="日志级别", scale=1)
+                    log_keyword = gr.Textbox(
+                        label="关键词搜索", placeholder="输入关键词过滤...", scale=3)
+                    log_tail = gr.Number(
+                        label="最近行数", value=500, minimum=50, maximum=10000, step=50, scale=1)
+
+                with gr.Row():
+                    log_search_btn = gr.Button("查询", variant="primary")
+                    log_export_btn = gr.Button("导出", variant="secondary")
+                    log_import_file = gr.File(
+                        label="导入日志", file_types=[".log", ".txt"], scale=2)
+                    log_import_btn = gr.Button("导入", variant="secondary", scale=1)
+
+                log_result = gr.Textbox(
+                    label="日志内容", lines=20, interactive=False,
+                    placeholder="点击查询显示日志...")
+                log_export_path = gr.Textbox(
+                    label="导出/导入状态", lines=1, interactive=False)
+
+                log_search_btn.click(
+                    search_logs, [log_level, log_keyword, log_tail],
+                    [log_result, log_export_path])
+                log_export_btn.click(
+                    export_logs, [log_level, log_keyword, log_tail],
+                    [log_export_path])
+                log_import_btn.click(
+                    import_logs, [log_import_file], [log_export_path])
+
         # 底部信息
-        gr.Markdown("""
-            ---
-            **AgentClaw v6** | Python + DeepSeek + LangGraph + Gradio + OpenCV
-            | 六层架构: 基础层 -> 工具层 -> 核心层 -> 编排层 -> 服务层 -> 检测层
-        """)
+        gr.Markdown("---\n**AgentClaw v6** | DeepSeek + LangGraph + Gradio + OpenCV | 九场景全链路平台")
 
     return demo
 

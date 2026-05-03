@@ -5,54 +5,30 @@ All notable changes to AgentClaw are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [6.3.0] - 2026-05-03
 
 ### Added
-- Root-level backward-compatible entry point wrappers (`demo_ui.py`, `aoi_workflow.py`,
-  `eval_runner.py`, `eval_cases.py`, `demo_self_learning.py`, `xml_config_tool.py`,
-  `langfuse_adapter.py`) for module refactor migration
-- Prometheus metrics system (`core/metrics.py`) with 9 metric families:
-  request latency, LLM call count/errors/latency, tool call count/latency,
-  span observability, system gauges
-- `/metrics` endpoint mounted on FastAPI server
-- LangFuse callback handler integration in API server and agent core
-- 5 new test modules: `test_api.py`, `test_error_chain.py`, `test_learning.py`,
-  `test_llm_guard.py`, `test_trace_chain.py` (214+ total test cases)
-- `GuardedChatModel.bind_tools()` override for LangGraph 0.3.x compatibility
-- ChromaDB + bge-small-zh semantic search as primary RAG backend with TF-IDF fallback
-- Learning system closed-loop: strategy injection into agent prompt, anti-pattern
-  detection in RegistryAdapter, tool preference matrix updates
-- `.gitignore` entries for `*.db` and `data/traces/`
-- `aoi_cases.json` / `aoi_workflow.py` AOI case database and standalone entry point
+- **UI Tab8 自反馈学习**: 进化状态面板 + 学习策略展示 + 反模式预警 + 进化历史图表
+- **UI Tab9 日志查询**: 日志浏览/搜索/过滤 + JSON 导入导出 + 一键清空
+- **低内存模式**: `CHROMA_ENABLED=false` 跳过 HuggingFace 嵌入模型和 ChromaDB 加载，仅用轻量 TF-IDF 检索，适配 8GB 设备
+- **JSON 容错修复** (`core/guarded_chat_model.py:_repair_tool_args`): 自动修复 LLM 返回的畸形 JSON（缺引号、缺括号、尾逗号）
+- **工具执行统计** (`tools/text_stats.py`): 新增字符/行/词数统计工具
+- `create_llm()` 工厂函数: 统一 LLM 实例创建入口，消除 4 个调用点的 ChatOpenAI 重复代码
 
 ### Changed
-- **Refactor**: 19 root-level modules reorganized into subpackages (`agent/`, `core/`,
-  `tools/`, `learning/`, `aoi/`, `api/`, `demo/`, `eval/`, `scripts/`)
-- **Persistence**: `MemorySaver` replaced with `SqliteSaver` (SQLite) for persistent
-  conversation checkpoints
-- **RAG**: Vector store path unified to `settings.CHROMA_DB_PATH` (`./data/chroma_db`),
-  eliminating split-brain between `tools/builtin.py` and `tools/health.py`
-- **LLMGuard**: Cache `hit_rate` property fix, `_generate()` streaming detection,
-  fallback chain robustness improvements
-- **TraceChain**: `end_trace()` no longer overwrites already-finished traces
-- **ErrorChain**: Enhanced circuit breaker state management, error classification
-  coverage expanded
-- **RegistryAdapter**: Anti-pattern sequence tracking (sliding window of 20),
-  dependency injection setters for learner/optimizer
-- **README**: Project structure updated (root wrappers, full test listing),
-  stats corrected to 21,000+ lines / 70+ files, MemorySaver→SqliteSaver
-- **Eval cases**: Test cases expanded, module exports `main()` for CLI use
+- **重依赖延迟加载**: `numpy` (~150MB)、`openai` (~50MB)、`psutil` (~5MB) 改为首次使用时导入，降低启动内存
+- **UI 布局优化**: 参数区改用 Accordion 折叠，减少文本密度；AOI 独立检测 Tab 合并至检测分析
+- **Gradio 升级**: 5.x → 6.14.0
+- **LLM 工厂统一**: `agent/core.py`、`aoi/workflow.py` 全部改用 `create_llm()`
+- **UI Tab 重编号**: 7个Tab → 9个Tab（合并 AOI 独立检测，新增自反馈学习/日志查询）
 
 ### Fixed
-- `BaseChatModel.bind_tools()` `NotImplementedError` when creating
-  `create_react_agent` with guarded model
-- LLMCache content length check rejecting short-but-valid content (< 10 chars)
-- `hit_rate` property/method mismatch between `LLMCache` and callers
-- Frozen dataclass `_ConfigValidator` incompatibility with `patch.object`
-  in tests (migrated to `patch.dict(settings._values, ...)`)
-- Streaming mock coroutine/async-generator mismatch in tests
-- `/metrics` 307 redirect not in `SKIP_PATHS` causing middleware interference
-- `LLMRetryPolicy` API drift (`max_retries` → `max_attempts`, removed `get_delay`)
+- **ReAct ChatInterface 死锁**: `threading.Lock()` + generator `yield` 导致锁永不释放，改为 `return` + 唯一 `thread_id`
+- **LangGraph `pending_sends` 错误**: 固定 thread_id 导致从过期 checkpoint 恢复，改为时间戳唯一 ID
+- **RAG 上传断连**: ChromaDB 嵌入阻塞主线程 → 改用 generator yield 保持连接
+- **递归限制 25**: ReAct agent 25+ 工具陷入循环，AOI 分析改为直接 LLM 调用
+- **`run_command` /dev/null 误拦截**: 危险模式正则 `>\s*/dev/` 误伤安全设备 `/dev/null` 等，改用负向先行断言
+- **RAG 守护线程被杀**: ChromaDB 写入在线程被 Gradio 清理时丢失，改回同步写入
 
 ## [6.2.0] - 2026-04
 

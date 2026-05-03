@@ -1,6 +1,6 @@
 # AgentClaw 🤖
 
-> 生产级 AI Agent 开发框架 | Python · DeepSeek · LangGraph · FastAPI · Gradio
+> 生产级 AI Agent 开发框架 | Python · DeepSeek · LangGraph · FastAPI · Gradio 6
 
 [![CI](https://github.com/JamesW-ang/AgentClaw/actions/workflows/ci.yml/badge.svg)](https://github.com/JamesW-ang/AgentClaw/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
@@ -34,14 +34,16 @@
 
 ## 1. 项目概览
 
-AgentClaw v6.1 是一个生产级 AI Agent 框架，核心特性包括：
+AgentClaw v6.3 是一个面向 AOI 行业的生产级 AI Agent 框架，核心特性包括：
 
 - **六层架构设计**：Config → Registry → Security → Retry → RateLimiter → LLM，每一层独立可测试
-- **22 个内置工具**：搜索、计算、文件操作、命令执行、代码沙箱、系统监控、进程管理、视觉分析、图片生成、知识库检索、浏览器控制、AOI 检测、XML 配置管理
-- **三重可靠性保障**：指数退避重试（retry）+ 令牌桶限流（rate_limiter）+ 健康检查（health）
-- **三链联动系统**：LLMGuard（容错）+ ErrorChain（错误处理）+ TraceChain（链路追踪）
+- **24 个内置工具**：搜索、计算、文件操作、命令执行、代码沙箱、系统监控、进程管理、视觉分析、图片生成、知识库检索、浏览器控制、AOI 检测、XML 配置管理、文本统计
+- **9 大功能场景**：检测分析 / 对话助手 / RAG知识库 / 多模态视觉 / 图片生成 / 多Agent协作 / AOI智能闭环 / 自反馈学习 / 日志查询
+- **三重可靠性保障**：指数退避重试（retry）+ 令牌桶限流（rate_limiter）+ 健康检查（health）+ JSON 容错修复
+- **三链联动系统**：LLMGuard（容错/熔断/降级）+ ErrorChain（错误分类/兜底）+ TraceChain（链路追踪）
 - **自主进化系统**：FeedbackCollector → ExperienceLearner → AdaptiveOptimizer → EvolutionManager，后台自动学习优化
-- **多入口部署**：FastAPI REST API（:8000）+ Gradio Web UI（:7860）+ Docker 容器化
+- **多入口部署**：FastAPI REST API（:8000）+ Gradio 6.x Web UI（:7860）+ Docker 容器化
+- **低内存支持**：CHROMA_ENABLED=false 可关闭 ChromaDB，仅用轻量 TF-IDF 检索，适配 8GB 设备
 
 ### 技术栈
 
@@ -53,7 +55,7 @@ AgentClaw v6.1 是一个生产级 AI Agent 框架，核心特性包括：
 | Agent 编排 | LangGraph（create_react_agent） |
 | 工具注册 | 自研 ToolRegistry（装饰器 + 单例） |
 | REST API | FastAPI + Uvicorn |
-| Web UI | Gradio 5.x |
+| Web UI | Gradio 6.x |
 | 向量检索 | ChromaDB + bge-small-zh-v1.5 |
 | 容错层 | LLMGuard（超时/重试/降级/熔断） |
 | 错误处理 | ErrorChain（统一错误分类和兜底） |
@@ -72,10 +74,10 @@ AgentClaw v6.1 是一个生产级 AI Agent 框架，核心特性包括：
 ├──────────────────────────────────────────────────────────────┤
 │ Level 5: 服务层 (api/server.py, demo/ui.py)                  │
 │ ├─ 依赖: Level 4 (agent.core) + aoi.workflow + 多Agent      │
-│ ├─ demo.ui 8个Tab:                                           │
+│ ├─ demo.ui 9个Tab:                                           │
 │ │   Tab1 检测分析 / Tab2 对话助手 / Tab3 RAG知识库            │
 │ │   Tab4 多模态视觉 / Tab5 图片生成 / Tab6 多Agent协作        │
-│ │   Tab7 AOI独立检测 / Tab8 AOI智能闭环                       │
+│ │   Tab7 AOI智能闭环 / Tab8 自反馈学习 / Tab9 日志查询         │
 │ └─ 被依赖: 用户 (HTTP/Gradio)                                │
 ├──────────────────────────────────────────────────────────────┤
 │ Level 4: 编排层                                               │
@@ -188,7 +190,7 @@ HTTP POST /ask
 
 ---
 
-## 4. 工具清单（22个）
+## 4. 工具清单（24个）
 
 ### 核心工具（tools/builtin.py — 14个）
 
@@ -322,7 +324,10 @@ validate_on_startup()          # 缺失则 sys.exit(1)
 | `VISION_MODEL` | `glm-4v-flash` | — | 视觉模型 |
 | `SERPAPI_KEY` | — | — | SerpAPI Key（可选，web_search 增强） |
 | `CHROMA_DB_PATH` | `./data/chroma_db` | — | ChromaDB 存储路径 |
+| `CHROMA_ENABLED` | `true` | — | 设为 false 可在 8GB 设备上禁用 ChromaDB，仅用轻量 TF-IDF |
 | `LOG_LEVEL` | `INFO` | — | 日志级别 |
+| `TOOL_TIMEOUT` | `30` | — | 工具执行超时（秒） |
+| `REACT_MAX_ROUNDS` | `5` | — | ReAct Agent 最大推理轮数 |
 
 ### 5.5 core/logger.py — 日志系统
 
@@ -1376,6 +1381,7 @@ echo $DEEPSEEK_API_KEY  # 验证环境变量
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v6.3 | 2026-05 | JSON 容错修复（\_repair\_tool\_args）；低内存模式（CHROMA\_ENABLED=false）；UI 扩展至 9 个 Tab（新增自反馈学习/日志查询）；布局优化（Accordion折叠）；重依赖延迟加载（numpy/openai/psutil → 首次用时导入）；AOI 独立检测合并至检测分析；ReAct 死锁修复；run\_command /dev/null 误拦截修复；RAG 上传断连修复 |
 | v6.2 | 2026-04 | 三链联动系统上线（LLMGuard容错层 + ErrorChain错误处理链 + TraceChain链路追踪）；工具清单扩展至22个（新增AOI检测引擎、XML配置工具）；添加Agent评估系统(eval) |
-| v6.1 | 2026-04 | 集成 retry/rate_limiter/health 到主调用链路；security 升级 TokenBucket；tools.registry.execute() 集成限流 |
+| v6.1 | 2026-04 | 集成 retry/rate\_limiter/health 到主调用链路；security 升级 TokenBucket；tools.registry.execute() 集成限流 |
 | v6.0 | 2026-04 | 五步架构整合（Config→Registry→Security→Retry→RateLimiter→LLM）；18 个工具注册；自主进化系统 |

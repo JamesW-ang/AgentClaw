@@ -280,7 +280,7 @@ COMMAND_WHITELIST = [
 # 危险模式黑名单
 DANGEROUS_PATTERNS = [
     r"rm\s+(-[rfRF]+\s+)?/",        # rm -rf /
-    r">\s*/dev/",                     # 重定向到设备
+    r">\s*/dev/(?!null\b|zero\b|random\b|urandom\b|stdout\b|stderr\b|stdin\b)",  # 重定向到块设备 (排除 /dev/null 等安全伪设备)
     r"mkfs\.",                        # 格式化文件系统
     r"dd\s+if=",                      # dd 直接磁盘操作
     r":\s*\(\)\s*\{",                # fork bomb
@@ -590,12 +590,16 @@ _chroma_lock = threading.Lock()
 
 
 def _get_rag_engine() -> RAGEngine:
-    """获取 RAG 引擎，优先使用 ChromaDB（如果可用）"""
+    """获取 RAG 引擎。CHROMA_ENABLED=true 时加载 ChromaDB，否则仅 TF-IDF"""
     global _rag_engine, _chroma_retriever, _chroma_store, _chroma_embeddings
     if _rag_engine is None:
         _rag_engine = RAGEngine(chunk_size=300, chunk_overlap=50)
 
-        # Step3: 检测 ChromaDB 向量库，自动切换
+        chroma_enabled = settings.CHROMA_ENABLED.lower() in ("true", "1", "yes")
+        if not chroma_enabled:
+            logger.info("ChromaDB 已禁用 (CHROMA_ENABLED=false)，使用轻量 TF-IDF 模式")
+            return _rag_engine
+
         db_path = settings.CHROMA_DB_PATH
         if os.path.isdir(db_path):
             try:
@@ -737,14 +741,14 @@ registry.register_func(
 # ============================================================
 
 def rag_add_documents(file_path: str) -> int:
-    """向共享 RAG 引擎添加文档（供 demo_ui Tab2 调用）"""
+    """向共享 RAG 引擎添加文档（TF-IDF + ChromaDB 同步写入）"""
     engine = _get_rag_engine()
     count = engine.add_documents(file_path)
     _add_to_chroma(file_path, source_type="file")
     return count
 
 def rag_add_text_to_shared(text: str, source: str = "手动输入") -> int:
-    """向共享 RAG 引擎添加文本"""
+    """向共享 RAG 引擎添加文本（TF-IDF + ChromaDB 同步写入）"""
     engine = _get_rag_engine()
     count = engine.add_text(text, source=source)
     _add_to_chroma(text, source_type="text")

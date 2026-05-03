@@ -2,10 +2,9 @@
 GuardedChatModel - LangChain ChatModel wrapper for LLMGuard
 让 LLMGuard 的容错能力无缝接入 LangGraph create_react_agent
 
-v6.1.4 修复:
-    1. convert_to_openai_tool: LangChain Pydantic 工具 -> OpenAI dict
-    2. tool_calls 转发: LLM 返回 tool_calls 时正确传给 LangGraph ReAct
-    3. json.loads: tc.function.arguments 是字符串，需 parse 为 dict
+v6.1.5 修复:
+    1-3. (v6.1.4)
+    4. json.loads 容错: LLM 返回破损 JSON 时自动修复 (unterminated string/missing brace/trailing comma)
 """
 import json
 import logging
@@ -22,6 +21,29 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import Field
 
 logger = logging.getLogger(__name__)
+
+
+def _repair_tool_args(raw: str, tool_name: str) -> dict:
+    """Best-effort repair of malformed JSON from LLM tool-call arguments."""
+    if not raw or not raw.strip():
+        return {}
+    # Try common fixes for truncated JSON
+    import re
+    raw = raw.strip()
+    # Fix 1: unclosed string — add closing quote + brace
+    if raw.count('"') % 2 != 0:
+        raw += '"'
+    # Fix 2: missing closing brace
+    open_b = raw.count("{") - raw.count("}")
+    open_s = raw.count("[") - raw.count("]")
+    raw += "]" * open_s + "}" * open_b
+    # Fix 3: trailing comma before closing brace/bracket
+    raw = re.sub(r',(\s*[}\]])', r'\1', raw)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning(f"[GuardedChatModel] Could not repair args for {tool_name}, using empty dict")
+        return {}
 
 
 def _convert_lc_tool_calls_to_openai(tool_calls: list[dict]) -> list[dict]:
@@ -114,14 +136,22 @@ class GuardedChatModel(BaseChatModel):
             if raw and hasattr(raw, 'choices') and raw.choices:
                 ai_msg = raw.choices[0].message
                 if hasattr(ai_msg, 'tool_calls') and ai_msg.tool_calls:
-                    tool_calls = [
-                        {
+                    tool_calls = []
+                    for tc in ai_msg.tool_calls:
+                        try:
+                            args = json.loads(tc.function.arguments)
+                        except json.JSONDecodeError:
+                            raw_args = tc.function.arguments or ""
+                            logger.warning(
+                                f"[GuardedChatModel] LLM returned malformed tool-call "
+                                f"arguments for {tc.function.name}: {raw_args[:120]}"
+                            )
+                            args = _repair_tool_args(raw_args, tc.function.name)
+                        tool_calls.append({
                             "name": tc.function.name,
-                            "args": json.loads(tc.function.arguments),
+                            "args": args,
                             "id": tc.id,
-                        }
-                        for tc in ai_msg.tool_calls
-                    ]
+                        })
             if tool_calls:
                 message = AIMessage(content=content, tool_calls=tool_calls)
             else:

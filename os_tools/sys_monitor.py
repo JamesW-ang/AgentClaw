@@ -9,7 +9,14 @@
 
 import platform
 
-import psutil
+# psutil 延迟加载 (~5MB)
+_psutil = None
+
+def _get_psutil():
+    global _psutil
+    if _psutil is None:
+        import psutil as _psutil
+    return _psutil
 
 
 class SystemMonitor:
@@ -23,14 +30,14 @@ class SystemMonitor:
             {"success": bool, "cpu_percent": float, "memory": dict, ...}
         """
         try:
-            cpu = psutil.cpu_percent(interval=1)
-            mem = psutil.virtual_memory()
+            cpu = _get_psutil().cpu_percent(interval=1)
+            mem = _get_psutil().virtual_memory()
 
             return {
                 "success": True,
                 "cpu_percent": cpu,
-                "cpu_count_logical": psutil.cpu_count(logical=True),
-                "cpu_count_physical": psutil.cpu_count(logical=False),
+                "cpu_count_logical": _get_psutil().cpu_count(logical=True),
+                "cpu_count_physical": _get_psutil().cpu_count(logical=False),
                 "memory": {
                     "total": mem.total,
                     "used": mem.used,
@@ -55,7 +62,7 @@ class SystemMonitor:
         """
         try:
             procs = []
-            for p in psutil.process_iter(["pid", "name", "cpu_percent", "memory_percent"]):
+            for p in _get_psutil().process_iter(["pid", "name", "cpu_percent", "memory_percent"]):
                 try:
                     info = p.info
                     procs.append({
@@ -64,7 +71,7 @@ class SystemMonitor:
                         "cpu_percent": info["cpu_percent"] or 0,
                         "memory_percent": info["memory_percent"] or 0,
                     })
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                except (_get_psutil().NoSuchProcess, _get_psutil().AccessDenied):
                     continue
 
             # 按 CPU 降序排序
@@ -86,7 +93,7 @@ class SystemMonitor:
             {"success": bool, "total": int, "used": int, "free": int, "percent": float}
         """
         try:
-            disk = psutil.disk_usage("/")
+            disk = _get_psutil().disk_usage("/")
             return {
                 "success": True,
                 "total": disk.total,
@@ -107,11 +114,11 @@ class SystemMonitor:
         try:
             # macOS 上 net_connections() 需要管理员权限
             try:
-                conn_count = len(psutil.net_connections())
-            except (psutil.AccessDenied, PermissionError):
+                conn_count = len(_get_psutil().net_connections())
+            except (_get_psutil().AccessDenied, PermissionError):
                 conn_count = -1  # -1 表示无权限
 
-            io = psutil.net_io_counters()
+            io = _get_psutil().net_io_counters()
             return {
                 "success": True,
                 "connections": conn_count,

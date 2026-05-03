@@ -22,8 +22,6 @@ import hashlib
 import os
 from datetime import datetime
 
-from openai import OpenAI
-
 from core.config import settings
 from core.logger import get_logger
 
@@ -129,6 +127,7 @@ def image_generate(prompt: str, size: str = "1024x1024",
             "未设置 ZHIPU_API_KEY 环境变量。"
             "请执行: export ZHIPU_API_KEY='your-key-here'"
         )
+    from openai import OpenAI  # 延迟加载 (~50MB)
     client = OpenAI(
         api_key=api_key,
         base_url=settings.ZHIPU_BASE_URL,
